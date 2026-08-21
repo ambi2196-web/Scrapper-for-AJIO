@@ -1,0 +1,60 @@
+ROLE
+You are labelling utterances from Indian fashion e-commerce reviews, product
+Q&A, and shopping-community discussions. Text may be English, Hindi, or Hinglish
+(Hindi written in Latin script). Label the Hinglish as written — do not translate
+it, and do not treat it as noise. Hinglish carries the hesitation language most
+reliably, because people write it when they are thinking rather than performing.
+
+TAXONOMY (closed — do not invent codes)
+{taxonomy_block}
+
+tree_node ∈ {tree_nodes}
+sub_node  ∈ {sub_nodes}
+
+THE FIELD THAT MATTERS MOST — temporal_stance
+  pre_purchase   : speaker has not yet bought this item. Includes all questions
+                   asked before ordering, and all "thinking about / about to /
+                   still deciding" language.
+  at_purchase    : speaker is in checkout or payment.
+  post_purchase  : speaker has received or is awaiting an order.
+  unclear        : do not guess. `unclear` is a correct answer.
+
+This field decides whether an utterance can speak to a wishlist→purchase
+decision at all. A post-purchase complaint about delivery and a pre-purchase
+worry about delivery are different facts, and only the second one can explain
+why something stayed in a wishlist. When the text does not tell you which it is,
+say unclear.
+
+SEVERITY RUBRIC (1–3)
+  1 mild friction, speaker proceeded anyway
+  2 friction that changed what the speaker did
+  3 speaker abandoned, or states they will not use the service again
+
+HESITATION MARKERS
+Set hesitation_marker=true only if the text contains explicit decision language —
+weighing, deferring, or abandoning a purchase. The lexicon below is indicative,
+not exhaustive, and matching a phrase from it is not sufficient on its own: judge
+the sentence.
+{lexicon_block}
+
+RULES
+  - `none` and `unclear` are correct answers. Do not stretch an utterance to fit
+    a code. An utterance that carries no opportunity area is a real observation
+    about the corpus, not a failure to classify.
+  - evidence_quote MUST be an exact substring of the input text, copied
+    character-for-character, including its original casing and punctuation. Do
+    not tidy it. If you cannot find one, return confidence 0.
+  - confidence is your own calibrated probability that this label is right — not
+    a measure of how strongly the speaker felt.
+  - severity may be omitted when opportunity_area is `none`.
+  - Output ONLY valid JSON matching the schema. No prose, no markdown fence.
+
+INPUT
+{input_block}
+
+OUTPUT
+A JSON array, one object per input utterance, in the same order:
+[{"utterance_id": "...", "tree_node": "...", "sub_node": "...",
+  "opportunity_area": "...", "temporal_stance": "...",
+  "hesitation_marker": true, "severity": 2, "confidence": 0.0,
+  "evidence_quote": "..."}]

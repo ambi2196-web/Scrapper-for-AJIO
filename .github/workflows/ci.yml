@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        # Test deps only. The collection and LLM libraries are not needed to run
+        # the acceptance suite, and leaving them out keeps CI fast.
+        run: pip install pytest pyyaml pydantic pandas pyarrow statsmodels
+
+      - name: Acceptance tests (T1-T11)
+        run: python -m pytest tests -q
+
+      - name: Invariant I1 - raw store is immutable
+        run: python -m src.cli verify-raw
+
+      - name: T11 - placeholder sweep over data/out
+        # The automated version of Attempt 2's shipped «baseline».
+        run: python -m src.cli sweep
+
+      - name: Secrets are not tracked
+        run: |
+          if git ls-files --error-unmatch .env 2>/dev/null; then
+            echo "::error::.env is tracked. This repo is public and is linked in the deck."
+            exit 1
+          fi
+          if git ls-files | grep -q '^data/raw/'; then
+            echo "::error::scraped corpus is committed to a public repo"
+            exit 1
+          fi
+          echo "clean"

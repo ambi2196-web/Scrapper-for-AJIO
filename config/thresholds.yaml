@@ -1,0 +1,108 @@
+# ============================================================================
+# EVERY numeric constant in the pipeline lives here, and EVERY entry needs a
+# `source:` field. src/config.py::load_thresholds() raises on a missing one
+# (invariant I6, acceptance test T5).
+#
+# `source:` must be one of:
+#   derived:<module>   — computed at runtime by that module, written back here
+#   cited:<reference>  — a published convention, named
+#   decision:<doc §>   — a human decision recorded in a document
+# A value may be null with a TODO. A value may NOT be a number without a source.
+#
+# Attempt 2 lost on exactly this: sensible constants, never justified.
+# ============================================================================
+
+classification:
+
+  tau_escalation:
+    value: null
+    source: "derived:src.validate.sweep_tau"
+    todo: >
+      Plot pass-1 accuracy against the gold set bucketed by self-reported
+      confidence. Set tau at the bucket where accuracy first drops below the
+      corpus mean. Do not default to 0.7.
+
+  batch_size_B:
+    value: null
+    source: "derived:src.classify.sweep_batch_size"
+    todo: >
+      Sweep B in {5,10,20,40} against a fixed 100-utterance gold subset. Pick
+      the largest B whose accuracy is statistically indistinguishable from B=5
+      (two-proportion test, alpha below). Throughput rises monotonically with
+      B; quality is the only limit, so measure it.
+
+  batch_size_B_sweep_grid:
+    value: [5, 10, 20, 40]
+    source: "decision:04_scraper_requirements.md §4.3"
+
+  temperature:
+    value: 0
+    source: "decision:04_scraper_requirements.md §4.4 — a classifier with temperature is not reproducible"
+
+validation:
+
+  kappa_acceptance_floor:
+    value: 0.61
+    source: "cited:Landis & Koch (1977) Biometrics 33(1):159-174 — lower bound of the 'substantial agreement' band (0.61-0.80)"
+
+  kappa_acceptance_ceiling_note:
+    value: 0.80
+    source: "cited:Landis & Koch (1977) — upper bound of 'substantial'; values above are 'almost perfect'"
+
+  human_sample_size_n:
+    value: null
+    source: "derived:src.validate.derive_sample_size"
+    todo: >
+      Derive AFTER S5: n large enough that the Wilson interval on the smallest
+      area you intend to report is narrower than the smallest differential you
+      intend to claim. Three lines of arithmetic; they go in the appendix.
+
+  disagreement_stratum_oversample_factor:
+    value: null
+    source: "derived:src.validate.derive_sample_size"
+    todo: "Set with n. Reweight to population before computing kappa, or kappa understates agreement."
+
+  lane_c_sample_target_per_day:
+    value: 1200
+    source: "derived:src.llm.router — Groq free tier 200,000 TPD / ~160 tokens per utterance at B=20"
+
+statistics:
+
+  alpha:
+    value: 0.05
+    source: "cited:conventional two-sided significance level"
+
+  proportion_ci_method:
+    value: "wilson"
+    source: "cited:Brown, Cai & DasGupta (2001) Statistical Science 16(2) — Wilson interval preferred over Wald at small n and extreme p"
+
+  min_cell_n_for_reporting:
+    value: null
+    source: "derived:src.quantify.derive_min_cell"
+    todo: "Smallest denominator whose Wilson interval is narrower than the smallest claimed differential. Below it, report the count and suppress the rate."
+
+collection:
+
+  posted_at_null_rate_trend_cutoff:
+    value: null
+    source: "derived:src.normalise.report_null_rates"
+    todo: >
+      Set from OBSERVED per-source posted_at null rates after S2. Above this
+      rate a source may not support a trend claim. Do not pick a round number
+      before observing.
+
+  near_dup_similarity:
+    value: 1.0
+    source: "decision:04_scraper_requirements.md §2.8 — exact sha1(normalised_text) match only; fuzzy near-dup thresholds are taste and are not used"
+
+  short_review_word_floor:
+    value: 8
+    source: "decision:04_scraper_requirements.md §3 — reviews under ~8 words emit as a single utterance, not split"
+
+  min_tokens_after_stopwords:
+    value: 3
+    source: "decision:04_scraper_requirements.md §3 S4 — too_short drop rule"
+
+  spam_repeat_source_ids:
+    value: 5
+    source: "decision:04_scraper_requirements.md §3 S4 — text repeated across >5 source_ids is boilerplate"

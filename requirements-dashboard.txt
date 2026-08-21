@@ -1,0 +1,13 @@
+# Streamlit Cloud installs THIS file, not requirements.txt.
+#
+# The dashboard reads committed artifacts from data/dashboard/ and data/out/.
+# It never scrapes and never calls an LLM, so none of the collection or provider
+# libraries belong here - and leaving them out keeps the Cloud build fast and
+# removes any path by which a deployed app could make a network call.
+streamlit>=1.36
+pandas>=2.2
+pyarrow>=16.0
+plotly>=5.22
+statsmodels>=0.14
+pyyaml>=6.0
+numpy>=1.26

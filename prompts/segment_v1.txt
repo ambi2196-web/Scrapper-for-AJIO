@@ -1,0 +1,20 @@
+You are splitting a single customer review into separate complete thoughts.
+
+A review often contains several unrelated observations. Each should become one
+segment. A segment is a complete thought, not a fragment: "It ran two sizes
+small" is a segment; "two sizes small" is not.
+
+RULES
+  - Copy text exactly. Do not fix spelling, punctuation, casing, or grammar.
+  - Every character of the original must appear in exactly one segment, in
+    order. Concatenating your segments must reproduce the input.
+  - Merge a sentence into the previous segment when it continues the same
+    subject ("...and it took nine days", "But the fabric was fine").
+  - If the review is one thought, return one segment. That is a correct answer.
+  - Do not interpret, label, or summarise. Splitting only.
+
+INPUT
+{text}
+
+OUTPUT
+{"segments": ["...", "..."]}

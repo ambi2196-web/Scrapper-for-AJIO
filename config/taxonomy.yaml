@@ -1,0 +1,44 @@
+# ============================================================================
+# FROZEN TAXONOMY — STUB. src/config.py::load_taxonomy() RAISES until filled.
+#
+# This file is deliberately incomplete. Its contents are owned by
+# 03_engine_spec.md, which is not in this repo yet. Per invariant I6, nothing
+# here may be invented to make the pipeline run: an OA list chosen by a coding
+# agent is a taste constant wearing a config file's clothes.
+#
+# TO UNBLOCK S5: transcribe the 12 OAs, the R/V/D/X node map, and the
+# detectability grades from 03_engine_spec.md, set `status: frozen`, set
+# `frozen_at`, and git-commit. The loader checks all four.
+# ============================================================================
+
+status: stub            # stub | frozen   <- loader raises unless "frozen"
+frozen_at: null         # ISO-8601 with offset, set at freeze time
+source_document: "03_engine_spec.md"
+taxonomy_version: null  # e.g. "tax_v1" — written into every labelled row
+
+# Closed vocabularies. The classifier may not invent a code outside these.
+tree_nodes: [R, V, D, X, none]     # transcribe real node names from 03 §
+sub_nodes: []                      # TODO: from 03_engine_spec.md
+
+# detectability grades gate S7 (invariant I4). Grades: strong | moderate | weak | none
+# An area graded weak/none carries oi = null and gate_reason, never a number.
+opportunity_areas: []
+# Expected shape once filled — 12 entries:
+#   - code: OA-01
+#     name: "..."
+#     definition: "one line, used verbatim in the classifier prompt"
+#     tree_node: R
+#     sub_node: "..."
+#     detectability: strong        # strong|moderate|weak|none
+#     detectability_rationale: "why public text can or cannot adjudicate this"
+
+temporal_stance:                   # NOT a stub — fully specified in 04 §4.4
+  - {code: pre_purchase,  definition: "speaker has not yet bought this item; includes all questions asked before ordering and all thinking-about / about-to / still-deciding language"}
+  - {code: at_purchase,   definition: "speaker is in checkout or payment"}
+  - {code: post_purchase, definition: "speaker has received or is awaiting an order"}
+  - {code: unclear,       definition: "do not guess; unclear is a correct answer"}
+
+severity:                          # NOT a stub — 04 §4.4 rubric, published in appendix
+  - {level: 1, definition: "mild friction, speaker proceeded anyway"}
+  - {level: 2, definition: "friction that changed what the speaker did"}
+  - {level: 3, definition: "speaker abandoned, or states they will not use the service again"}

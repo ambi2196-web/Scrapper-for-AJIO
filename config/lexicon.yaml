@@ -1,0 +1,136 @@
+# Hesitation and decision lexicon, EN + Hinglish. Published in the deck appendix.
+#
+# INDICATIVE, NOT EXHAUSTIVE. The classifier is told this explicitly: the list
+# seeds recall, it does not define the label. A hesitation marker set by
+# keyword match alone is not the same claim as one set by a model reading the
+# sentence, and only the second is reported.
+#
+# I7: Hinglish is preserved, never translated. These are matched on a
+# lowercased COPY; stored text is never lowercased.
+
+version: "lex_v1"
+
+hesitation_en:
+  deliberation:
+    - "thinking about"
+    - "still deciding"
+    - "not sure if"
+    - "should i"
+    - "worth it"
+    - "worth buying"
+    - "confused between"
+    - "torn between"
+    - "on the fence"
+    - "in two minds"
+    - "debating whether"
+    - "planning to buy"
+    - "about to order"
+    - "before i order"
+    - "before buying"
+    - "anyone bought"
+    - "has anyone tried"
+    - "is it genuine"
+    - "is it original"
+    - "second thoughts"
+  deferral:
+    - "added to wishlist"
+    - "in my wishlist"
+    - "saved for later"
+    - "waiting for sale"
+    - "waiting for a discount"
+    - "will buy later"
+    - "keeping it in cart"
+    - "left it in cart"
+    - "abandoned"
+  abandonment:
+    - "removed from cart"
+    - "did not buy"
+    - "didn't buy"
+    - "bought from"      # context: bought elsewhere instead
+    - "ordered from myntra"
+    - "went with"
+    - "cancelled my order"
+    - "never ordering again"
+    - "uninstalling"
+
+hesitation_hinglish:
+  # Latin-script Hindi. Kept exactly as typed in the wild, including spelling variants.
+  deliberation:
+    - "lena chahiye"
+    - "lu ya nahi"
+    - "loon ya na"
+    - "kya ye sahi hai"
+    - "sahi hai kya"
+    - "original hai"
+    - "asli hai"
+    - "genuine hai kya"
+    - "koi bataye"
+    - "kisi ne liya"
+    - "kisi ne kharida"
+    - "worth hai kya"
+    - "soch raha"
+    - "soch rahi"
+    - "confuse hu"
+    - "samajh nahi aa raha"
+  deferral:
+    - "baad me lunga"
+    - "sale ka wait"
+    - "wait kar raha"
+    - "abhi nahi"
+  abandonment:
+    - "cancel kar diya"
+    - "wapas kar diya"
+    - "return kar diya"
+    - "paise nahi mile"
+    - "dubara nahi"
+    - "kabhi nahi"
+
+# Hinglish detection: Latin script + hits in this list. A word-list rule is
+# more auditable than a model, which is why it is used here (04 §3 S2).
+hindi_function_words_latin:
+  - hai
+  - nahi
+  - nahin
+  - kya
+  - mera
+  - meri
+  - aur
+  - bhi
+  - koi
+  - kar
+  - kiya
+  - diya
+  - liya
+  - gaya
+  - raha
+  - rahi
+  - hua
+  - hui
+  - abhi
+  - bahut
+  - bohot
+  - accha
+  - acha
+  - theek
+  - thik
+  - paisa
+  - paise
+  - wapas
+  - dubara
+  - matlab
+  - lekin
+  - phir
+  - jab
+  - tab
+  - yeh
+  - woh
+  - apna
+  - sirf
+
+emphasis_markers:
+  # Runs of >3 identical chars collapse to 3 but the emphasis is KEPT — it is a
+  # severity signal (04 §3 S2). These are recorded, not stripped.
+  repeated_char_min_run: 4
+  repeated_char_collapse_to: 3
+  all_caps_min_word_len: 4
+  exclamation_run_min: 2

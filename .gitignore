@@ -1,0 +1,38 @@
+# --- secrets ---
+.env
+.env.*
+!.env.example
+*.key
+.streamlit/secrets.toml
+
+# --- scraped corpus: NOT committed ---
+# The repo is public. data/out/ and data/dashboard/ carry the aggregated
+# artifacts the deck and the dashboard read; the corpus itself stays local.
+data/raw/*
+data/interim/*
+data/labelled/*
+data/gold/human_labels.csv
+logs/deferred/
+logs/*.jsonl
+
+# Keep the shape of the tree visible on a fresh clone.
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/labelled/.gitkeep
+!data/gold/.gitkeep
+!logs/.gitkeep
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+.ipynb_checkpoints/
+
+# --- os / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

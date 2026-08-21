@@ -1,0 +1,25 @@
+# wishlist_proximity — how close an opportunity area sits to the wishlist→purchase
+# decision moment. Multiplies into the §5.2 opportunity index.
+#
+# INVARIANT I8: this file is frozen and git-committed with a timestamp BEFORE
+# S5 runs. src/config.py compares the file mtime against `frozen_at` and S5
+# refuses to start if the file was touched after freezing. Editing proximity
+# after seeing classification output is how a prior read gets rationalised into
+# a weighting; the mtime check exists to make that impossible rather than
+# merely discouraged.
+#
+# Blocked on D5 in 03_engine_spec.md. D5 blocks S5 and therefore blocks the
+# whole 23 Aug slot — settle it 22 Aug at the latest.
+
+status: stub          # stub | frozen
+frozen_at: null       # ISO-8601 with offset; set by `python -m src.cli freeze-proximity`
+frozen_commit: null   # git sha at freeze time
+
+scale:
+  min: 0.0
+  max: 1.0
+  interpretation: "1.0 = the friction is experienced at the wishlist→cart decision itself; 0.0 = the friction cannot influence that decision"
+
+weights: {}
+# Expected shape once D5 settles — one entry per OA, each with a written reason:
+#   OA-01: {value: 1.0, reason: "occurs in-session at the moment of add-to-cart"}

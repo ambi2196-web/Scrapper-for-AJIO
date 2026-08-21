@@ -1,0 +1,330 @@
+"""Provider routing, rate limiting, retry and the budget ledger.
+
+This module is where free-tier builds fail, so it is built first and everything
+downstream depends on it.
+
+The core design decision: limits are enforced BEFORE sending, not in reaction to
+429s. On Groq's 8,000 tokens-per-minute free budget, a single B=20 batch is
+~3,000 tokens - more than a third of the minute's entire allowance. React to a
+429 there and you have already lost the minute; three of them and the run stalls
+for no reason other than arithmetic you could have done in advance.
+
+The second design decision: the daily counters are persistent. A limiter that
+resets when the process restarts will burn a 1,500-request daily quota by
+mid-afternoon across four crashed runs and leave nothing for the evening, which
+is exactly when the bulk classification pass wants to be running. Daily state is
+replayed from logs/llm_ledger.jsonl on boot.
+
+Routing (see 04 §4.2):
+  Lane A - Gemini 2.5 Flash-Lite - bulk classification, full corpus
+  Lane B - Gemini 2.5 Flash      - escalation for confidence < tau, B=1
+  Lane C - Groq gpt-oss-120b     - blind second annotator, stratified sample
+
+Lane C is not a cheaper copy of lane A. It is a different model family from a
+different vendor, because a second pass by the same model measures nothing - a
+model agrees with itself, and self-agreement is not evidence.
+"""
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import datetime as _dt
+import json
+import random
+import threading
+import time
+from typing import Any, Callable
+
+from src.config import ROOT
+from src.envelope import now_ist
+
+LEDGER = ROOT / "logs" / "llm_ledger.jsonl"
+DEFERRED = ROOT / "logs" / "deferred"
+
+
+@dataclasses.dataclass(frozen=True)
+class Limits:
+    """Published free-tier ceilings. RE-VERIFY BEFORE EACH RUN - these move."""
+
+    rpm: int
+    rpd: int
+    tpm: int
+    tpd: int | None = None
+
+
+# Verified against provider docs on 21 Aug 2026 (04 §4.1). Re-check on run day.
+LANES: dict[str, dict[str, Any]] = {
+    "A": {
+        "provider": "gemini",
+        "model": "gemini-2.5-flash-lite",
+        "role": "bulk classification (S5 pass 1, full corpus)",
+        "limits": Limits(rpm=30, rpd=1500, tpm=1_000_000),
+    },
+    "B": {
+        "provider": "gemini",
+        "model": "gemini-2.5-flash",
+        "role": "escalation for confidence < tau, single-utterance calls",
+        "limits": Limits(rpm=15, rpd=1500, tpm=1_000_000),
+    },
+    "C": {
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "role": "blind second annotator (independent, stratified sample)",
+        # TPD is the binding limit here, not RPM: 200k/day at ~3k per B=20 call
+        # is ~65 calls, ~1,300 utterances. That is the honest daily ceiling.
+        "limits": Limits(rpm=30, rpd=1000, tpm=8_000, tpd=200_000),
+    },
+}
+
+
+class QuotaExhausted(RuntimeError):
+    """Raised when a daily ceiling is hit. Not retryable today."""
+
+
+class TokenBucket:
+    """Per-minute bucket for requests and tokens. Blocks rather than 429s."""
+
+    def __init__(self, rpm: int, tpm: int) -> None:
+        self.rpm = rpm
+        self.tpm = tpm
+        self._requests: list[float] = []
+        self._tokens: list[tuple[float, int]] = []
+        self._lock = threading.Lock()
+
+    def _prune(self, now: float) -> None:
+        cutoff = now - 60.0
+        self._requests = [t for t in self._requests if t > cutoff]
+        self._tokens = [(t, n) for t, n in self._tokens if t > cutoff]
+
+    def acquire(self, est_tokens: int) -> float:
+        """Block until both budgets allow the call. Returns seconds waited."""
+        waited = 0.0
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                self._prune(now)
+                used_tokens = sum(n for _, n in self._tokens)
+                req_ok = len(self._requests) < self.rpm
+                tok_ok = used_tokens + est_tokens <= self.tpm
+                if req_ok and tok_ok:
+                    self._requests.append(now)
+                    self._tokens.append((now, est_tokens))
+                    return waited
+                # Sleep until the oldest entry in the binding window expires.
+                oldest = min(
+                    ([self._requests[0]] if not req_ok and self._requests else [])
+                    + ([self._tokens[0][0]] if not tok_ok and self._tokens else [])
+                )
+                sleep_for = max(0.1, 60.0 - (now - oldest) + 0.05)
+            time.sleep(sleep_for)
+            waited += sleep_for
+
+
+class DailyCounter:
+    """RPD/TPD counters replayed from the ledger, so a restart does not reset them."""
+
+    def __init__(self) -> None:
+        self.requests: dict[tuple[str, str], int] = {}
+        self.tokens: dict[tuple[str, str], int] = {}
+        self._replay()
+
+    @staticmethod
+    def _today() -> str:
+        return _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=5, minutes=30))).date().isoformat()
+
+    def _replay(self) -> None:
+        if not LEDGER.exists():
+            return
+        today = self._today()
+        with LEDGER.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not str(entry.get("at", "")).startswith(today):
+                    continue
+                key = (entry.get("provider"), entry.get("model"))
+                self.requests[key] = self.requests.get(key, 0) + 1
+                total = int(entry.get("prompt_tokens") or 0) + int(entry.get("completion_tokens") or 0)
+                self.tokens[key] = self.tokens.get(key, 0) + total
+
+    def check(self, provider: str, model: str, limits: Limits, est_tokens: int) -> None:
+        key = (provider, model)
+        if self.requests.get(key, 0) >= limits.rpd:
+            raise QuotaExhausted(
+                f"{provider}/{model}: daily request cap reached "
+                f"({self.requests.get(key, 0)}/{limits.rpd}). Resets at provider midnight."
+            )
+        if limits.tpd is not None and self.tokens.get(key, 0) + est_tokens > limits.tpd:
+            raise QuotaExhausted(
+                f"{provider}/{model}: daily token cap would be exceeded "
+                f"({self.tokens.get(key, 0)} + {est_tokens} > {limits.tpd}). "
+                "This is the binding limit on Groq's free tier - it is why lane C "
+                "is a sample rather than a full second pass."
+            )
+
+    def record(self, provider: str, model: str, prompt_tokens: int, completion_tokens: int) -> None:
+        key = (provider, model)
+        self.requests[key] = self.requests.get(key, 0) + 1
+        self.tokens[key] = self.tokens.get(key, 0) + prompt_tokens + completion_tokens
+
+    def status(self) -> list[dict[str, Any]]:
+        rows = []
+        for lane, cfg in LANES.items():
+            key = (cfg["provider"], cfg["model"])
+            lim: Limits = cfg["limits"]
+            used_r = self.requests.get(key, 0)
+            used_t = self.tokens.get(key, 0)
+            rows.append({
+                "lane": lane,
+                "provider": cfg["provider"],
+                "model": cfg["model"],
+                "role": cfg["role"],
+                "requests_used": used_r,
+                "requests_cap": lim.rpd,
+                "requests_left": max(0, lim.rpd - used_r),
+                "tokens_used": used_t,
+                "tokens_cap": lim.tpd,
+                "tokens_left": (max(0, lim.tpd - used_t) if lim.tpd else None),
+                "cost_usd": 0.0,
+            })
+        return rows
+
+
+def estimate_tokens(text: str) -> int:
+    """Conservative pre-send estimate. Over-estimating costs throughput; under-
+    estimating costs the minute, so this rounds up."""
+    return int(len(text) / 3.2) + 32
+
+
+class Router:
+    """Single entry point for every LLM call in the pipeline."""
+
+    def __init__(self, max_attempts: int = 5) -> None:
+        self.max_attempts = max_attempts
+        self.daily = DailyCounter()
+        self._buckets: dict[str, TokenBucket] = {
+            lane: TokenBucket(cfg["limits"].rpm, cfg["limits"].tpm)
+            for lane, cfg in LANES.items()
+        }
+        LEDGER.parent.mkdir(parents=True, exist_ok=True)
+        DEFERRED.mkdir(parents=True, exist_ok=True)
+
+    def call(
+        self,
+        lane: str,
+        prompt: str,
+        *,
+        invoke: Callable[[str, str], tuple[str, int, int]],
+        batch_id: str | None = None,
+    ) -> str | None:
+        """Run one call on `lane`. Returns the raw response text, or None if deferred.
+
+        `invoke(model, prompt) -> (text, prompt_tokens, completion_tokens)` is
+        supplied by the provider module, so this stays provider-agnostic and
+        testable without network access.
+        """
+        cfg = LANES[lane]
+        provider, model, limits = cfg["provider"], cfg["model"], cfg["limits"]
+        est = estimate_tokens(prompt)
+
+        self.daily.check(provider, model, limits, est)
+        waited = self._buckets[lane].acquire(est)
+
+        last_error: str | None = None
+        for attempt in range(1, self.max_attempts + 1):
+            started = time.monotonic()
+            try:
+                text, ptok, ctok = invoke(model, prompt)
+            except Exception as exc:  # provider modules raise RetryableError for 429/5xx
+                last_error = f"{type(exc).__name__}: {exc}"
+                latency = time.monotonic() - started
+                self._log(lane, provider, model, 0, 0, latency, attempt, "error", last_error, waited)
+                if not _is_retryable(exc) or attempt == self.max_attempts:
+                    break
+                time.sleep(_backoff(attempt, exc))
+                continue
+
+            latency = time.monotonic() - started
+            self.daily.record(provider, model, ptok, ctok)
+            self._log(lane, provider, model, ptok, ctok, latency, attempt, "ok", None, waited)
+            return text
+
+        # Park rather than stall. One bad batch must never hold up the run - the
+        # deferred queue is drained at the end, when quota shape is known.
+        if batch_id:
+            self._defer(lane, batch_id, prompt, last_error)
+        return None
+
+    def _defer(self, lane: str, batch_id: str, prompt: str, error: str | None) -> None:
+        path = DEFERRED / f"{lane}_{batch_id}.json"
+        path.write_text(
+            json.dumps({"lane": lane, "batch_id": batch_id, "prompt": prompt,
+                        "error": error, "deferred_at": now_ist()}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def _log(
+        self, lane: str, provider: str, model: str, ptok: int, ctok: int,
+        latency: float, attempt: int, outcome: str, error: str | None, waited: float,
+    ) -> None:
+        with LEDGER.open("a", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps({
+                "at": now_ist(), "lane": lane, "provider": provider, "model": model,
+                "prompt_tokens": ptok, "completion_tokens": ctok,
+                "latency_s": round(latency, 3), "rate_limit_wait_s": round(waited, 3),
+                "attempt": attempt, "outcome": outcome, "error": error,
+                "cost_usd": 0.0,
+            }, ensure_ascii=False) + "\n")
+
+
+class RetryableError(RuntimeError):
+    """429/500/503. Carries Retry-After when the provider supplied one."""
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    return isinstance(exc, RetryableError)
+
+
+def _backoff(attempt: int, exc: BaseException) -> float:
+    """Exponential backoff with FULL jitter, honouring Retry-After when present.
+
+    Full jitter rather than equal jitter because several batches can retry
+    together after a shared 429; without full randomisation they resynchronise
+    and hit the next window as a thundering herd.
+    """
+    if isinstance(exc, RetryableError) and exc.retry_after:
+        return float(exc.retry_after) + random.uniform(0, 1.0)
+    return random.uniform(0, min(60.0, 2.0 ** attempt))
+
+
+def print_status() -> None:
+    rows = DailyCounter().status()
+    print(f"LLM quota status  ({_dt.datetime.now().strftime('%Y-%m-%d %H:%M')} local)")
+    print("-" * 92)
+    for r in rows:
+        tok = (f"{r['tokens_used']:,}/{r['tokens_cap']:,}" if r["tokens_cap"] else f"{r['tokens_used']:,}/-")
+        print(f"  lane {r['lane']}  {r['provider']:<7} {r['model']:<24} "
+              f"req {r['requests_used']:>5}/{r['requests_cap']:<5} "
+              f"tok {tok:>17}")
+        print(f"           {r['role']}")
+    print("-" * 92)
+    print("  total spend: $0.00 (free tiers only)")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="LLM router")
+    parser.add_argument("--status", action="store_true", help="print quota consumed/remaining today")
+    args = parser.parse_args()
+    if args.status:
+        print_status()
+    else:
+        parser.print_help()

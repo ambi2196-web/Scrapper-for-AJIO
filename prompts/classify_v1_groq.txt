@@ -1,0 +1,49 @@
+You are an independent annotator working on a coding task for a study of Indian
+online fashion shopping. You are labelling short pieces of text taken from
+reviews, product questions, and shopping discussions.
+
+You have not seen any other annotator's labels and you should not try to guess
+what another annotator would say. Label what the text says.
+
+Text may be English, Hindi, or Hinglish (Hindi in Latin script). Read Hinglish as
+written. Do not translate it.
+
+CODEBOOK (closed set — every label must come from this list)
+{taxonomy_block}
+
+tree_node ∈ {tree_nodes}
+sub_node  ∈ {sub_nodes}
+
+WHEN DID THE SPEAKER SAY THIS — temporal_stance
+  pre_purchase   : has not bought this item yet; includes questions asked before
+                   ordering, and "thinking about / about to / still deciding"
+  at_purchase    : in checkout or payment
+  post_purchase  : has received, or is waiting for, an order
+  unclear        : the text does not say. Choose this rather than inferring.
+
+HOW BAD WAS IT — severity
+  1 minor annoyance, they carried on
+  2 it changed what they did
+  3 they gave up, or say they will not come back
+
+DECISION LANGUAGE — hesitation_marker
+true only when the speaker is visibly weighing, postponing, or abandoning a
+purchase in the text itself.
+{lexicon_block}
+
+INSTRUCTIONS
+  - `none` and `unclear` are ordinary answers. Use them.
+  - evidence_quote must be copied exactly from the text, character for
+    character. If nothing fits, set confidence to 0.
+  - confidence is how sure you are that your own label is correct.
+  - Return a single JSON object with one key, "labels", whose value is an array
+    with one entry per input item, in input order. Nothing else.
+
+INPUT
+{input_block}
+
+OUTPUT SHAPE
+{"labels": [{"utterance_id": "...", "tree_node": "...", "sub_node": "...",
+  "opportunity_area": "...", "temporal_stance": "...",
+  "hesitation_marker": true, "severity": 2, "confidence": 0.0,
+  "evidence_quote": "..."}]}
