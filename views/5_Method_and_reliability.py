@@ -216,7 +216,7 @@ because it is a way a study like this quietly goes wrong.
 | I5 | Denominators never mix source or stance | S7 raises if a grouping omits either key |
 | I6 | No threshold without a stated source | the config loader raises on an entry lacking `source:` |
 | I7 | Hinglish preserved, never translated | no translate call exists in the codebase, and a test asserts it |
-| I8 | `wishlist_proximity` frozen before classification | S5 refuses to start if the file's mtime is later than its recorded freeze |
+| I8 | `wishlist_proximity` frozen before classification | a SHA-256 of the weights is recorded at freeze time and re-verified on every load |
 """)
 
     st.info(

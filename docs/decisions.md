@@ -181,6 +181,25 @@ The deployed app performs no scraping and makes no LLM calls.
 deployed dashboard has no library capable of an outbound call. It is also why the
 Cloud build is fast and needs no secrets.
 
+### B9 · I8 enforced by content hash, not file mtime
+**Settled:** 22 Aug 2026 · **Departs from 04 §0, deliberately**
+
+04 §0 specifies that S5 "refuses to start if `config/proximity.yaml` has an
+mtime later than its recorded `frozen_at`". That check cannot work for a
+git-tracked file: `git clone` and `actions/checkout` stamp every file with the
+checkout time, so a fresh clone always looks modified and CI failed on exactly
+this. Meanwhile a real edit could be hidden with `touch -d`.
+
+It fails in both directions — false alarm on an honest clone, silent pass on a
+dishonest edit — so it is replaced with a SHA-256 fingerprint over `weights` and
+`scale`, recorded as `frozen_sha256` at freeze time and re-verified on every
+load.
+
+This is strictly stronger and states the invariant more precisely: **touching
+the file is harmless; changing the weights is the violation.** Two tests cover
+both directions — a tampered weight raises, and a file whose mtime is a day in
+the future loads clean.
+
 ### B7 · `addressability` implemented as a hard gate, not a weight
 **Settled:** 22 Aug 2026
 

@@ -179,8 +179,38 @@ def opportunity_index_config() -> dict[str, Any]:
 # I8 - proximity freeze
 # --------------------------------------------------------------------------
 
+def _proximity_fingerprint(data: dict[str, Any]) -> str:
+    """SHA-256 over the substantive content of the proximity table.
+
+    Covers `weights` and `scale` only. The status lines are excluded because
+    freezing rewrites them, so including them would make the fingerprint
+    self-invalidating.
+    """
+    import hashlib
+    import json
+
+    payload = json.dumps(
+        {"weights": data.get("weights") or {}, "scale": data.get("scale") or {}},
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def load_proximity(*, enforce_freeze: bool = True) -> dict[str, Any]:
-    path = CONFIG_DIR / "proximity.yaml"
+    """Load the proximity table, enforcing invariant I8.
+
+    I8 is checked by CONTENT HASH, not by file mtime.
+
+    04 §0 prescribes an mtime check, and that turns out not to work for a
+    git-tracked file: `git clone` and `actions/checkout` write every file with
+    the checkout time, so a fresh clone always looks "modified after freeze".
+    The check would fail in CI and for anyone cloning the repo, while a
+    determined edit could still be hidden with `touch -d`. It fails open and
+    closed in exactly the wrong directions.
+
+    A content fingerprint is strictly stronger and states the real invariant:
+    touching the file is harmless, CHANGING THE WEIGHTS is the violation.
+    """
     data = _read("proximity.yaml")
     if not enforce_freeze:
         return data
@@ -196,14 +226,21 @@ def load_proximity(*, enforce_freeze: bool = True) -> dict[str, Any]:
     frozen_dt = _dt.datetime.fromisoformat(str(frozen_at))
     if frozen_dt.tzinfo is None:
         raise ConfigError("proximity.yaml frozen_at must carry a UTC offset.")
-    mtime = _dt.datetime.fromtimestamp(path.stat().st_mtime, tz=_dt.timezone.utc)
-    # One minute of slack absorbs checkout/copy mtime rewrites; an actual edit
-    # is always far larger than that.
-    if mtime > frozen_dt + _dt.timedelta(minutes=1):
+
+    recorded = data.get("frozen_sha256")
+    if not recorded:
         raise ConfigError(
-            "config/proximity.yaml was modified after it was frozen (invariant I8).\n"
-            f"  frozen_at: {frozen_dt.isoformat()}\n"
-            f"  mtime:     {mtime.isoformat()}\n"
+            "proximity.yaml is frozen but carries no frozen_sha256.\n"
+            "  Without it there is no way to show the weights are unchanged since\n"
+            "  the freeze. Re-run: python -m src.cli freeze-proximity"
+        )
+    actual = _proximity_fingerprint(data)
+    if actual != recorded:
+        raise ConfigError(
+            "config/proximity.yaml weights changed after it was frozen (invariant I8).\n"
+            f"  frozen_at:      {frozen_dt.isoformat()}\n"
+            f"  recorded hash:  {recorded}\n"
+            f"  current hash:   {actual}\n"
             "  Weighting edited after seeing classification output is a rationalised read.\n"
             "  Either revert the edit, or re-freeze deliberately and re-run S5 from scratch."
         )
@@ -241,12 +278,22 @@ def freeze_proximity() -> dict[str, Any]:
     except Exception:  # a missing git is not a reason to block the freeze
         sha = None
     frozen_at = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    fingerprint = _proximity_fingerprint(data)
 
     text = path.read_text(encoding="utf-8")
+    # frozen_sha256 may not exist yet on a first freeze; append it after
+    # frozen_commit in that case.
+    if not re.search(r"^frozen_sha256:", text, flags=re.MULTILINE):
+        text = re.sub(
+            r"^(frozen_commit:.*)$",
+            lambda m: m.group(1) + chr(10) + "frozen_sha256: null",
+            text, count=1, flags=re.MULTILINE,
+        )
     substitutions = {
-        r"^status:.*$": f"status: frozen",
+        r"^status:.*$": "status: frozen",
         r"^frozen_at:.*$": f'frozen_at: "{frozen_at}"',
         r"^frozen_commit:.*$": f'frozen_commit: {sha or "null"}',
+        r"^frozen_sha256:.*$": f'frozen_sha256: "{fingerprint}"',
     }
     for pattern, replacement in substitutions.items():
         text, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
@@ -260,6 +307,7 @@ def freeze_proximity() -> dict[str, Any]:
     data["status"] = "frozen"
     data["frozen_at"] = frozen_at
     data["frozen_commit"] = sha
+    data["frozen_sha256"] = fingerprint
     return data
 
 

@@ -379,15 +379,50 @@ def test_t6_freeze_preserves_comments(tmp_path, monkeypatch):
 
 
 def test_t6_modified_after_freeze_refuses(tmp_path, monkeypatch):
-    frozen_at = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=2)).isoformat()
-    path = tmp_path / "proximity.yaml"
-    path.write_text(yaml.safe_dump({
-        "status": "frozen", "frozen_at": frozen_at, "weights": {"OA-01": {"value": 1.0}},
-    }), encoding="utf-8")   # mtime = now, which is 2h after frozen_at
-    monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path)
+    """Changing a weight after freezing must be caught.
 
-    with pytest.raises(ConfigError, match="modified after it was frozen"):
+    Checked by CONTENT HASH, not mtime. 04 §0 prescribes an mtime check, but
+    `git clone` and `actions/checkout` stamp every file with the checkout time,
+    so an mtime rule reports a fresh clone as tampered while a real edit could
+    be hidden with `touch -d`. It fails in both directions. The fingerprint
+    states the invariant that actually matters: touching the file is harmless,
+    changing the weights is the violation.
+    """
+    path = tmp_path / "proximity.yaml"
+    path.write_text(
+        "status: stub\nfrozen_at: null\nfrozen_commit: null\n"
+        "weights:\n  OA-01:\n    value: 1.0\n    reason: because\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path)
+    cfg.freeze_proximity()
+    cfg.load_proximity()          # clean immediately after freezing
+
+    # Tamper with a weight, leaving every status line untouched.
+    tampered = path.read_text(encoding="utf-8").replace("value: 1.0", "value: 0.2")
+    path.write_text(tampered, encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="changed after it was frozen"):
         cfg.load_proximity()
+
+
+def test_t6_touching_the_file_without_editing_is_not_a_violation(tmp_path, monkeypatch):
+    """A fresh clone rewrites every mtime. That must not read as tampering."""
+    import os
+    import time
+
+    path = tmp_path / "proximity.yaml"
+    path.write_text(
+        "status: stub\nfrozen_at: null\nfrozen_commit: null\n"
+        "weights:\n  OA-01:\n    value: 1.0\n    reason: because\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path)
+    cfg.freeze_proximity()
+
+    future = time.time() + 86_400
+    os.utime(path, (future, future))       # simulate a checkout long after the freeze
+    cfg.load_proximity()                   # must not raise
 
 
 # --------------------------------------------------------------------------

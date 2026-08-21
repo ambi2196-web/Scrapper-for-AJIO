@@ -93,7 +93,7 @@ it is a specific way a study like this goes quietly wrong.
 | I5 | Denominators never mix source or stance | S7 raises if a grouping omits either key |
 | I6 | No threshold without a stated source | config loader raises on an entry lacking `source:` |
 | I7 | Hinglish preserved, never translated | no translation call in the codebase; a test asserts it |
-| I8 | `wishlist_proximity` frozen before classification | S5 refuses to start if the file's mtime postdates its freeze |
+| I8 | `wishlist_proximity` frozen before classification | SHA-256 fingerprint of the weights recorded at freeze, re-verified on every load |
 
 **Why I6 and I8 are mechanical.** A previous attempt shipped a slide containing a
 literal `«baseline»` placeholder, alongside several constants that were sensible
