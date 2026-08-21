@@ -98,9 +98,42 @@ class PDPCollector(Collector):
             "  either way, so hand-assembly is acceptable provided it is recorded."
         )
 
+    # -- D3 pre-flight ------------------------------------------------------
+
+    def robots_preflight(self) -> None:
+        """D3, settled 22 Aug 2026: if robots.txt disallows, PDP is CUT.
+
+        The pre-commitment matters because the alternative is available and
+        tempting: Playwright renders a page whether or not robots.txt permits
+        fetching it, so a disallow could be quietly routed around by switching
+        `mode`. Deciding in advance - and failing here rather than at the
+        collector - is what makes "we honoured robots.txt" a true sentence
+        instead of one that survived only because nobody checked.
+
+        A cut is not a failure. It is recorded in docs/decisions.md and stated
+        in the method line, and the engine still has Play, App Store and the
+        qualitative sources.
+        """
+        probe = "https://www.ajio.com/p/000000000"
+        if self.robots_allows(probe):
+            self.log_event("robots_preflight_ok", {"probe": probe})
+            return
+        self.log_event("robots_preflight_disallow", {"probe": probe, "action": "PDP cut per D3"})
+        raise CollectorError(
+            "PDP collection is CUT: robots.txt disallows the product path, or is "
+            "unreachable (which this engine treats as a disallow rather than as "
+            "permission).\n"
+            "  D3 pre-commits to cutting the source rather than switching to\n"
+            "  Playwright, which would render a page robots.txt asked us not to\n"
+            "  fetch. Deciding this in advance is what makes the ToS position real.\n"
+            "  Record the cut in the method line; Play + App Store still carry the\n"
+            "  differential, and Reddit/YouTube still carry mechanism."
+        )
+
     # -- fetching -----------------------------------------------------------
 
     def fetch(self) -> Iterator[Envelope]:
+        self.robots_preflight()
         products = self.product_codes()
         if self.mode == "xhr":
             yield from self._fetch_xhr(products)

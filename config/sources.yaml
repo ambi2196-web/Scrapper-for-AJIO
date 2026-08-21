@@ -53,9 +53,36 @@ sources:
     endpoint: null               # CAPTURE LIVE from DevTools. Do not guess. §2.3
     sampling:
       strategy: "stratified"
-      strata: ["rating_band", "review_count_band"]
-      categories: null           # blocked on D1 (category scope)
-      products_per_stratum: null # derive from target n, see thresholds.yaml
+      strata: ["category", "rating_band", "review_count_band"]
+      # D1 SETTLED 22 Aug 2026 — BROAD. Sample across all major categories.
+      # Reason: a narrow scope buys depth in one size story but makes the
+      # denominator category-specific, and the brief asks for opportunity areas
+      # across the wishlist journey rather than within one department. Breadth
+      # also protects the differential: Myntra and Nykaa Fashion have different
+      # category mixes, so a narrow AJIO scope would compare unlike catalogues.
+      # Narrowed ONCE, here, per 03 §9 D1 — no further narrowing downstream.
+      categories:
+        - women-ethnic-wear
+        - women-western-wear
+        - women-footwear
+        - men-topwear
+        - men-bottomwear
+        - men-footwear
+        - kids-clothing
+        - bags-and-accessories
+      rating_bands: ["<3.0", "3.0-3.9", "4.0-4.4", ">=4.5"]
+      review_count_bands: ["1-9", "10-49", "50-199", ">=200"]
+      # A collection budget, not a statistical threshold. 8 categories x 4
+      # rating bands x 4 review-count bands = 128 strata; at 8 products each
+      # that is ~1,024 PDPs, which is inside a Playwright day and comfortable
+      # over XHR. Whether it yields enough Q&A utterances for the reference
+      # source cannot be known until S5 - so verify against
+      # statistics.min_cell_n_for_reporting after S5 and top up if short.
+      products_per_stratum: 8
+      # Deliberately NOT sampled from the homepage or a top-sorted listing:
+      # placement correlates with promotion, promotion correlates with price and
+      # stock behaviour, and stock behaviour is one of the things being measured.
+      forbid_homepage_sampling: true
     frame_log: "logs/pdp_sampling_frame.jsonl"
 
   pdp_reviews:

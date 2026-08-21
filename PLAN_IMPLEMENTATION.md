@@ -37,27 +37,35 @@ Every phase below exists to make one of those three answers available.
 
 ---
 
-## Phase 0 — Unblock (½ day) · **blocking, do first**
+## Phase 0 — Unblock (½ day) · ✅ **complete, 22 Aug 2026**
 
-Three inputs are missing and two of them block classification entirely.
+All four blockers cleared. `03_engine_spec.md` was located in
+`F:\PM Course Case studies\Attempt 3\` and is now committed to the repo.
 
-| Item | Status | Blocks | Owner |
-|---|---|---|---|
-| **Taxonomy** — 12 OAs, R/V/D/X node map, detectability grades | Stub. `config/taxonomy.yaml` raises on load. | S5, S7, S9 | You — transcribe from `03_engine_spec.md` |
-| **D5 — `wishlist_proximity`** | Stub. `config/proximity.yaml` raises. | S5 (via I8), the whole index | You — settle, pressure-test, freeze |
-| **D1 — category scope** | `sources.yaml pdp_qa.sampling.categories: null` | PDP collection | You — narrow once, write down why |
-| **D3 — PDP ToS approach** | Undecided | PDP collection | Record in `docs/decisions.md` before running |
+| Item | Resolution |
+|---|---|
+| **Taxonomy** | Transcribed from 03 §4. 12 areas, frozen as `tax_v1`. OA-09 (closure) and OA-10 (forgetting) gated by detectability. Locked by `test_taxonomy_matches_the_spec`. |
+| **D5 — `wishlist_proximity`** | Settled and **frozen before any classification ran**, commit `406dcc7`. Principle: proximity grades how much of an area's harm is created or amplified by the time gap a wishlist introduces. |
+| **D1 — category scope** | BROAD, 8 categories. Narrowed once, here. 128 strata × 8 products ≈ 1,024 PDPs. |
+| **D3 — PDP ToS** | Public-only, robots honoured, **PDP cut outright if robots disallows** — enforced by `robots_preflight()` so a disallow cannot be routed around via Playwright. |
 
-**Why these are hard stops rather than defaults.** The loaders raise instead of
-falling back. An agent that invents a 12-area taxonomy to make a pipeline run has
-produced a taste constant wearing a config file's clothes, and every count built
-on it inherits that with no way to tell afterwards. This is the failure mode
-invariant I6 exists for, and Attempt 2 is the reason it is mechanical now.
+**Two gaps this phase surfaced in the Phase 1 build, both now fixed:**
 
-**Exit criteria**
-- `python -c "from src.config import load_taxonomy; load_taxonomy()"` returns.
-- `python -m src.cli freeze-proximity` succeeds, and the file is committed.
-- `docs/decisions.md` records D1 and D3 with dates.
+- **`addressability` was missing from the OI formula.** 03 §5.2 specifies four
+  factors; the build had three. It is now a per-area hard 0/1 gate with a
+  required rationale, multiplying into the index. All twelve areas score 1 —
+  OA-07 (refund delay) was the closest call and is explicitly not gated, because
+  paying a refund already owed is a process fix, not an incentive.
+- **The index had no named reference source.** 03 §5.1 forbids mixing sources in
+  a denominator, which leaves OI undefined unless one is named. PDP Q&A is now
+  the declared reference; every other source is flagged `is_reference_cell:
+  false` and reported as a robustness check.
+
+**Exit criteria — all met**
+- `python -c "from src.config import load_taxonomy; load_taxonomy()"` returns ✅
+- `python -m src.cli freeze-proximity` succeeded and is committed ✅
+- `docs/decisions.md` records D1, D3, D5 with dates ✅
+- `pytest` green, including five new taxonomy-fidelity tests ✅
 
 ---
 

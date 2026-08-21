@@ -1,25 +1,144 @@
-# wishlist_proximity — how close an opportunity area sits to the wishlist→purchase
-# decision moment. Multiplies into the §5.2 opportunity index.
+# ============================================================================
+# wishlist_proximity — FROZEN. D5 settled 22 Aug 2026, approved as drafted.
 #
-# INVARIANT I8: this file is frozen and git-committed with a timestamp BEFORE
-# S5 runs. src/config.py compares the file mtime against `frozen_at` and S5
-# refuses to start if the file was touched after freezing. Editing proximity
-# after seeing classification output is how a prior read gets rationalised into
-# a weighting; the mtime check exists to make that impossible rather than
-# merely discouraged.
+# Frozen BEFORE any classification ran, which is the point. src/config.py
+# compares this file's mtime against `frozen_at` and S5 refuses to start if it
+# was touched afterwards. To change a weight now you must re-freeze
+# deliberately AND re-run S5 over the full corpus — there is no path that lets
+# a weight move quietly once results exist.
 #
-# Blocked on D5 in 03_engine_spec.md. D5 blocks S5 and therefore blocks the
-# whole 23 Aug slot — settle it 22 Aug at the latest.
+# INVARIANT I8: freeze BEFORE S5, not before S7. S5 already reveals the shape of
+# the answer, so freezing after it means tuning the weights with the result in
+# view. The index's entire defensibility rests on this one point — if the table
+# is tuned after seeing results, the index is a rationalisation with a formula
+# on top, and that is exactly what a sharp evaluator probes.
+# ============================================================================
 
-status: stub          # stub | frozen
-frozen_at: null       # ISO-8601 with offset; set by `python -m src.cli freeze-proximity`
-frozen_commit: null   # git sha at freeze time
+status: frozen
+frozen_at: "2026-08-21T20:10:43.094432+00:00"
+frozen_commit: 406dcc7b248177c82e3982d90b74e43511313553
 
 scale:
   min: 0.0
   max: 1.0
-  interpretation: "1.0 = the friction is experienced at the wishlist→cart decision itself; 0.0 = the friction cannot influence that decision"
+  interpretation: "how directly this area sits on the 30-day wishlist path"
 
-weights: {}
-# Expected shape once D5 settles — one entry per OA, each with a written reason:
-#   OA-01: {value: 1.0, reason: "occurs in-session at the moment of add-to-cart"}
+# --------------------------------------------------------------------------
+# THE PRINCIPLE — this is the part that has to survive questioning, more than
+# any individual number.
+#
+# A wishlist introduces a TIME GAP between intent and purchase. That gap is the
+# only thing structurally distinguishing "wishlist → purchase" from "browse →
+# purchase". So proximity grades how much of an area's harm is CREATED OR
+# AMPLIFIED BY THE GAP, rather than harm that would befall an immediate
+# purchase equally.
+#
+# Why this principle rather than "is it on the R→V→D→X chain": every one of the
+# twelve areas is on that chain, so that test does not discriminate and would
+# collapse the weight to a constant. The gap test discriminates, and it points
+# at interventions that are specifically wishlist interventions rather than
+# general conversion fixes.
+#
+# The consequence worth noticing: OA-12 (checkout failure) genuinely breaks W30,
+# but fixing it helps every purchase equally, so it ranks low here. That is the
+# principle working, not a bug — though it is also the value most worth arguing
+# about, so it is called out explicitly rather than buried.
+# --------------------------------------------------------------------------
+
+weights:
+
+  # --- 1.0 · the gap is the mechanism -------------------------------------
+  OA-02:
+    value: 1.0
+    reason: >
+      "Sold out or delisted AFTER SAVING" is gap-created by definition. Without
+      the delay there is no such event. Maximally wishlist-specific.
+  OA-10:
+    value: 1.0
+    reason: >
+      Forgetting requires elapsed time. The gap is the entire mechanism. Gated
+      by detectability=none, so this weight never produces a number — but it is
+      recorded so the gate is visibly a detectability decision rather than a
+      quiet judgement that the area does not matter.
+
+  # --- 0.9 · strongly amplified by the gap --------------------------------
+  OA-01:
+    value: 0.9
+    reason: >
+      Size-level stock is the most volatile dimension of availability — the
+      wanted size goes first and goes fast, so a saved item degrades in exactly
+      this dimension. Not 1.0 because it also blocks immediate purchases.
+  OA-09:
+    value: 0.9
+    reason: >
+      A wishlist is literally the set of things not yet decided between, so
+      unresolved choice is the wishlist's resting state. Gated by
+      detectability=weak; recorded for the same reason as OA-10.
+
+  # --- 0.7 · hesitation the gap prolongs but does not create ---------------
+  OA-03:
+    value: 0.7
+    reason: >
+      Fit uncertainty is present at first view and persists unresolved across
+      the gap. The delay gives it time to harden into non-purchase, but the
+      friction exists without a wishlist.
+  OA-04:
+    value: 0.7
+    reason: >
+      Doubt about whether the item matches its photography is a pre-purchase
+      brake that the gap sustains rather than causes.
+
+  # --- 0.6 ----------------------------------------------------------------
+  OA-05:
+    value: 0.6
+    reason: >
+      Same mechanism as OA-04 but narrower and lower-volume; material doubt is
+      usually a component of quality doubt rather than an independent brake.
+
+  # --- 0.5 · anticipated downside risk that dampens commitment ------------
+  OA-06:
+    value: 0.5
+    reason: >
+      Operates pre-purchase as "if this is wrong, can I undo it?" — a real brake
+      on committing to a saved item, but experienced mostly post-purchase and
+      not created by the delay.
+  OA-11:
+    value: 0.5
+    reason: >
+      Gap-relevant when the purchase has a deadline (a wedding, a festival), in
+      which case the delay consumes the buffer. Otherwise a general friction.
+      Split placement reflects that split mechanism.
+
+  # --- 0.4 ----------------------------------------------------------------
+  OA-07:
+    value: 0.4
+    reason: >
+      Refund grievance is overwhelmingly post-purchase. It damages the next
+      save→buy cycle more than the current one, so it sits further from this
+      metric than its complaint volume suggests.
+  OA-08:
+    value: 0.4
+    reason: "Same reasoning as OA-07, at lower volume."
+
+  # --- 0.3 · on the path, but not gap-related -----------------------------
+  OA-12:
+    value: 0.3
+    reason: >
+      Genuinely breaks W30 — the X node is on the chain — but the user had
+      already decided by then, and a checkout fix improves all conversion
+      equally rather than wishlist conversion specifically. THE MOST
+      CONTESTABLE VALUE IN THIS TABLE, and flagged as such deliberately: the
+      counter-view is that W30 should weight any on-path failure equally
+      regardless of gap-specificity, which would put this at 0.8+. Considered
+      and rejected at freeze time on the grounds that the index exists to rank
+      WISHLIST interventions, not conversion fixes in general. If challenged,
+      the sensitivity re-rank below is the answer.
+
+# --------------------------------------------------------------------------
+# Sensitivity note for the appendix
+# --------------------------------------------------------------------------
+# Because proximity multiplies into the index, the RANKING is what matters, not
+# the absolute oi values. Before presenting, re-rank with every weight set to
+# 1.0 and report whether the top three areas change. If the ranking is stable
+# under that perturbation, the weights are not doing the work and the finding is
+# robust; if it flips, say so and lead with prevalence instead.

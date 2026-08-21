@@ -128,12 +128,51 @@ def load_taxonomy() -> dict[str, Any]:
                 f"taxonomy area {area['code']} has detectability={area['detectability']!r}; "
                 f"must be one of {sorted(valid_grades)} (invariant I4 gates on this)"
             )
+        # addressability is a HARD 0/1 gate, not a soft weight (03 §5.2): 0 where
+        # the only available fix is a monetary incentive. It must be declared
+        # with a reason, because zeroing an area removes it from the ranking and
+        # that removal has to be defensible on a slide.
+        if area.get("addressability") not in (0, 1):
+            raise ConfigError(
+                f"taxonomy area {area['code']} has addressability="
+                f"{area.get('addressability')!r}; must be exactly 0 or 1. "
+                "It is a constraint check, not a weight."
+            )
+        if not area.get("addressability_rationale"):
+            raise ConfigError(
+                f"taxonomy area {area['code']} declares addressability but no "
+                "addressability_rationale. A gated area appears greyed on the slide "
+                "with its reason; an ungated one has to survive the same question."
+            )
+    if len(areas) != len({a["code"] for a in areas}):
+        raise ConfigError("duplicate opportunity_area codes in taxonomy.yaml")
     return data
 
 
 def detectability_map() -> dict[str, str]:
     """OA code -> detectability grade. S7 gates on this BEFORE aggregating (I4)."""
     return {a["code"]: a["detectability"] for a in load_taxonomy()["opportunity_areas"]}
+
+
+def addressability_map() -> dict[str, int]:
+    """OA code -> 0/1. Zero where the only fix is a monetary incentive (03 §5.2)."""
+    return {a["code"]: int(a["addressability"]) for a in load_taxonomy()["opportunity_areas"]}
+
+
+def opportunity_index_config() -> dict[str, Any]:
+    """The named reference source and stance for the index.
+
+    03 §5.1 forbids mixing sources in a denominator, so the index is undefined
+    unless one source is named. Every other source is a robustness check.
+    """
+    cfg = load_taxonomy().get("opportunity_index") or {}
+    for field in ("reference_source", "reference_stance"):
+        if not cfg.get(field):
+            raise ConfigError(
+                f"taxonomy.yaml opportunity_index.{field} is unset. The index is "
+                "undefined without a named reference source (03 §5.2)."
+            )
+    return cfg
 
 
 # --------------------------------------------------------------------------
@@ -172,20 +211,55 @@ def load_proximity(*, enforce_freeze: bool = True) -> dict[str, Any]:
 
 
 def freeze_proximity() -> dict[str, Any]:
-    """Stamp proximity.yaml with the current time and git sha, then write it back."""
+    """Stamp proximity.yaml with the current time and git sha, in place.
+
+    Edits the three status lines textually rather than re-serialising the file.
+    A yaml.safe_dump round-trip would silently strip every comment - and in this
+    file the comments are the per-area justifications, which are appendix
+    material and the only record of WHY each weight is what it is. Losing them
+    would leave twelve numbers with no defence.
+    """
+    import re
+
     path = CONFIG_DIR / "proximity.yaml"
     data = _read("proximity.yaml")
     if not data.get("weights"):
         raise ConfigError("refusing to freeze an empty proximity table; settle D5 first.")
+    missing_reasons = [
+        code for code, entry in data["weights"].items()
+        if not (entry or {}).get("reason")
+    ]
+    if missing_reasons:
+        raise ConfigError(
+            f"refusing to freeze: no reason given for {missing_reasons}. "
+            "A weight without a stated reason is a taste constant, which is the "
+            "failure mode I6 exists to prevent."
+        )
+
     try:
         sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     except Exception:  # a missing git is not a reason to block the freeze
         sha = None
+    frozen_at = _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+    text = path.read_text(encoding="utf-8")
+    substitutions = {
+        r"^status:.*$": f"status: frozen",
+        r"^frozen_at:.*$": f'frozen_at: "{frozen_at}"',
+        r"^frozen_commit:.*$": f'frozen_commit: {sha or "null"}',
+    }
+    for pattern, replacement in substitutions.items():
+        text, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
+        if count != 1:
+            raise ConfigError(
+                f"could not find a top-level line matching {pattern!r} in proximity.yaml; "
+                "freeze aborted rather than risk a malformed write"
+            )
+    path.write_text(text, encoding="utf-8", newline="\n")
+
     data["status"] = "frozen"
-    data["frozen_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    data["frozen_at"] = frozen_at
     data["frozen_commit"] = sha
-    with path.open("w", encoding="utf-8", newline="\n") as fh:
-        yaml.safe_dump(data, fh, sort_keys=False, allow_unicode=True)
     return data
 
 

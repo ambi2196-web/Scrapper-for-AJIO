@@ -24,7 +24,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.config import ROOT, denominator_eligible_sources, detectability_map, load_proximity, threshold
+from src.config import (
+    ROOT,
+    addressability_map,
+    denominator_eligible_sources,
+    detectability_map,
+    load_proximity,
+    opportunity_index_config,
+    threshold,
+)
 from src.envelope import now_ist
 
 LABELLED = ROOT / "data" / "labelled"
@@ -79,7 +87,9 @@ def aggregate(group_keys: list[str] | None = None) -> Any:
     alpha = float(threshold("statistics.alpha"))
     eligible = denominator_eligible_sources()
     grades = detectability_map()
+    addressable = addressability_map()
     proximity = load_proximity()["weights"]
+    oi_cfg = opportunity_index_config()
 
     df = _load()
 
@@ -106,8 +116,17 @@ def aggregate(group_keys: list[str] | None = None) -> Any:
     merged[["proportion", "ci_low", "ci_high"]] = stats
 
     merged["detectability"] = merged["opportunity_area"].map(grades)
+    merged["addressability"] = merged["opportunity_area"].map(addressable)
     merged["proximity_weight"] = merged["opportunity_area"].map(
         lambda a: (proximity.get(a) or {}).get("value")
+    )
+    # The index is defined on ONE named reference source and one stance
+    # (03 §5.2). Other cells still carry an oi, flagged as a robustness check
+    # rather than as the headline number - where the ranking flips between
+    # sources, that flip is a finding about which population is being heard.
+    merged["is_reference_cell"] = (
+        (merged["source"] == oi_cfg["reference_source"])
+        & (merged["temporal_stance"] == oi_cfg["reference_stance"])
     )
 
     # Severity mean per cell, used by the index.
@@ -131,10 +150,16 @@ def aggregate(group_keys: list[str] | None = None) -> Any:
 
 
 def _opportunity_index(row: Any) -> float | None:
-    """oi = proportion x severity x wishlist_proximity. Null when any input is gated.
+    """oi = prevalence x mean_severity x wishlist_proximity x addressability (03 §5.2).
 
-    Returning null rather than a computed-then-hidden number is invariant I4:
-    the gate is a property of the data, not of the rendering.
+    Null - not zero - when any input is gated. Returning null rather than a
+    computed-then-hidden number is invariant I4: the gate is a property of the
+    data, not of the rendering.
+
+    addressability is a hard 0/1 gate rather than a soft weight, which is how the
+    no-monetary-incentives constraint becomes a visible part of the method
+    instead of a line of prose. A zeroed area still appears in the output, with
+    its reason.
     """
     if row.get("detectability") in ("weak", "none"):
         return None
@@ -142,7 +167,16 @@ def _opportunity_index(row: Any) -> float | None:
         return None
     if row.get("severity_mean") is None or row["severity_mean"] != row["severity_mean"]:
         return None
-    return round(float(row["proportion"]) * float(row["severity_mean"]) * float(row["proximity_weight"]), 6)
+    addressability = row.get("addressability")
+    if addressability is None:
+        return None
+    return round(
+        float(row["proportion"])
+        * float(row["severity_mean"])
+        * float(row["proximity_weight"])
+        * float(addressability),
+        6,
+    )
 
 
 def _gate_reason(row: Any) -> str | None:
@@ -153,6 +187,8 @@ def _gate_reason(row: Any) -> str | None:
         return "opportunity_area not present in the frozen taxonomy detectability table"
     if row.get("proximity_weight") is None:
         return "no wishlist_proximity weight for this area (config/proximity.yaml)"
+    if row.get("addressability") == 0:
+        return "not addressable without a monetary incentive"
     return None
 
 

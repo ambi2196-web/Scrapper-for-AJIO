@@ -214,6 +214,83 @@ def test_every_source_declares_brand_establishment():
 
 
 # --------------------------------------------------------------------------
+# Taxonomy fidelity - locks the transcription from 03_engine_spec.md §4
+# --------------------------------------------------------------------------
+
+# Transcribed independently of config/taxonomy.yaml so that an edit to one and
+# not the other fails loudly. A taxonomy that drifts mid-analysis silently
+# invalidates every earlier count.
+SPEC_AREAS = {
+    "OA-01": ("V", "strong"),
+    "OA-02": ("V", "strong"),
+    "OA-03": ("D", "strong"),
+    "OA-04": ("D", "strong"),
+    "OA-05": ("D", "moderate"),
+    "OA-06": ("D", "strong"),
+    "OA-07": ("D", "strong"),
+    "OA-08": ("D", "moderate"),
+    "OA-09": ("D", "weak"),
+    "OA-10": ("R", "none"),
+    "OA-11": ("D", "strong"),
+    "OA-12": ("X", "strong"),
+}
+
+
+def test_taxonomy_matches_the_spec():
+    areas = {a["code"]: a for a in cfg.load_taxonomy()["opportunity_areas"]}
+    assert set(areas) == set(SPEC_AREAS), (
+        "taxonomy codes differ from 03_engine_spec.md §4. The taxonomy is fixed "
+        "and closed; adding an area requires a written justification and a "
+        "re-run of the full corpus."
+    )
+    for code, (node, grade) in SPEC_AREAS.items():
+        assert areas[code]["tree_node"] == node, f"{code} tree_node drifted"
+        assert areas[code]["detectability"] == grade, f"{code} detectability drifted"
+
+
+def test_the_two_gated_areas_are_the_expected_ones():
+    """OA-09 (closure) and OA-10 (forgetting) are the engine's blind spots.
+
+    If either ever becomes ungated, the engine has started producing numbers
+    about phenomena it argued it cannot see - which is precisely the Attempt 2
+    contradiction this gate exists to prevent.
+    """
+    gated = {c for c, g in cfg.detectability_map().items() if g in ("weak", "none")}
+    assert gated == {"OA-09", "OA-10"}
+
+
+def test_sub_nodes_are_drawn_from_the_closed_vocabulary():
+    tax = cfg.load_taxonomy()
+    vocab = set(tax["sub_nodes"])
+    for area in tax["opportunity_areas"]:
+        assert area["sub_node"] in vocab, (
+            f"{area['code']} sub_node {area['sub_node']!r} is outside the closed "
+            f"vocabulary from 03 §3"
+        )
+
+
+def test_addressability_is_a_binary_gate_with_a_reason():
+    for area in cfg.load_taxonomy()["opportunity_areas"]:
+        assert area["addressability"] in (0, 1), (
+            f"{area['code']} addressability must be exactly 0 or 1 - it is a "
+            "constraint check, not a soft weight (03 §5.2)"
+        )
+        assert area["addressability_rationale"].strip()
+
+
+def test_opportunity_index_names_a_reference_source():
+    """03 §5.1 forbids mixing sources in a denominator, so the index is
+    undefined unless one source is named."""
+    oi = cfg.opportunity_index_config()
+    assert oi["reference_source"] == "pdp_qa", (
+        "PDP Q&A is the reference source because it is pre-purchase by "
+        "construction - the property the whole index depends on"
+    )
+    assert oi["reference_stance"] == "pre_purchase"
+    assert oi["reference_source"] in cfg.denominator_eligible_sources()
+
+
+# --------------------------------------------------------------------------
 # T5 - threshold guard
 # --------------------------------------------------------------------------
 
@@ -239,9 +316,66 @@ def test_t5_null_threshold_raises_with_its_todo():
 # T6 - proximity freeze
 # --------------------------------------------------------------------------
 
-def test_t6_unfrozen_proximity_refuses():
+def test_t6_unfrozen_proximity_refuses(tmp_path, monkeypatch):
+    """A stub table must stop S5 rather than default to anything."""
+    path = tmp_path / "proximity.yaml"
+    path.write_text(yaml.safe_dump({"status": "stub", "weights": {}}), encoding="utf-8")
+    monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path)
     with pytest.raises(ConfigError, match="I8|not frozen"):
         cfg.load_proximity()
+
+
+def test_t6_shipped_proximity_is_frozen_and_complete():
+    """The real table: frozen, timestamped, one weighted reason per taxonomy area."""
+    prox = cfg.load_proximity()          # raises if unfrozen or edited after freeze
+    assert prox["status"] == "frozen"
+    assert prox["frozen_at"]
+
+    weights = prox["weights"]
+    areas = {a["code"] for a in cfg.load_taxonomy()["opportunity_areas"]}
+    assert set(weights) == areas, (
+        "every opportunity area needs a proximity weight, including the gated ones - "
+        "recording them is what shows the gate is a detectability decision rather "
+        "than a quiet judgement that the area does not matter"
+    )
+    for code, entry in weights.items():
+        assert 0.0 <= float(entry["value"]) <= 1.0, f"{code} proximity outside [0,1]"
+        assert entry.get("reason", "").strip(), (
+            f"{code} has a weight but no reason; a weight without a stated reason "
+            "is a taste constant"
+        )
+
+
+def test_t6_freeze_refuses_a_weight_with_no_reason(tmp_path, monkeypatch):
+    path = tmp_path / "proximity.yaml"
+    path.write_text(
+        "status: stub\nfrozen_at: null\nfrozen_commit: null\n"
+        "weights:\n  OA-01:\n    value: 1.0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path)
+    with pytest.raises(ConfigError, match="no reason given"):
+        cfg.freeze_proximity()
+
+
+def test_t6_freeze_preserves_comments(tmp_path, monkeypatch):
+    """The per-area justifications are appendix material and must survive a freeze.
+
+    A yaml.safe_dump round-trip would silently strip every comment, leaving
+    twelve numbers with no defence.
+    """
+    path = tmp_path / "proximity.yaml"
+    path.write_text(
+        "# THE PRINCIPLE: load-bearing comment\n"
+        "status: stub\nfrozen_at: null\nfrozen_commit: null\n"
+        "weights:\n  OA-01:\n    value: 1.0\n    reason: because\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path)
+    cfg.freeze_proximity()
+    after = path.read_text(encoding="utf-8")
+    assert "# THE PRINCIPLE: load-bearing comment" in after
+    assert "status: frozen" in after
 
 
 def test_t6_modified_after_freeze_refuses(tmp_path, monkeypatch):

@@ -25,15 +25,20 @@ public record cannot adjudicate get no number at all — they get a stated reaso
 | Pipeline S1–S9 | ✅ implemented |
 | Acceptance tests T1–T11 | ✅ 22 passing, 7 skipped pending a corpus |
 | Streamlit dashboard, 6 pages | ✅ implemented, empty-state until data exists |
-| **Taxonomy (12 OAs)** | ⛔ **stub — blocks S5** |
-| **`wishlist_proximity` (D5)** | ⛔ **stub — blocks S5** |
-| Category scope (D1), PDP ToS (D3) | ⛔ undecided |
+| Taxonomy (12 OAs), frozen as `tax_v1` | ✅ transcribed from 03 §4 |
+| `wishlist_proximity` (D5) | ✅ frozen before classification, commit `406dcc7` |
+| Category scope (D1), PDP ToS (D3) | ✅ settled 22 Aug 2026 |
+| **Collection (S1)** | ⬜ next — Phase 2 |
 
-The two blockers are deliberate hard stops. `config/taxonomy.yaml` and
-`config/proximity.yaml` raise on load rather than falling back to a default,
-because a taxonomy invented to make a pipeline run is a taste constant wearing a
-config file's clothes — and every count built on it inherits that silently. See
-Phase 0 in the build plan.
+Phase 0 is closed; every decision is recorded in
+[`docs/decisions.md`](docs/decisions.md) with its reason and its date.
+
+Two areas — OA-09 (cannot choose between similar options) and OA-10 (forgot /
+never came back) — are **gated by detectability and will never carry a number**.
+That is deliberate and is the engine's most important honesty artefact: a review
+is written after an event, and not-deciding is not an event. A low number from a
+blind instrument is more dangerous than no number, because it looks like
+evidence.
 
 ---
 

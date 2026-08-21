@@ -1,44 +1,213 @@
 # ============================================================================
-# FROZEN TAXONOMY — STUB. src/config.py::load_taxonomy() RAISES until filled.
+# FROZEN TAXONOMY — transcribed verbatim from 03_engine_spec.md §4.
 #
-# This file is deliberately incomplete. Its contents are owned by
-# 03_engine_spec.md, which is not in this repo yet. Per invariant I6, nothing
-# here may be invented to make the pipeline run: an OA list chosen by a coding
-# agent is a taste constant wearing a config file's clothes.
+# Fixed and closed. An open taxonomy produces incomparable buckets, and
+# comparison is the requirement. Add an area only with a written justification
+# AND a re-run of the full corpus — a taxonomy that grows mid-analysis silently
+# invalidates every earlier count.
 #
-# TO UNBLOCK S5: transcribe the 12 OAs, the R/V/D/X node map, and the
-# detectability grades from 03_engine_spec.md, set `status: frozen`, set
-# `frozen_at`, and git-commit. The loader checks all four.
+# `detectability` is assigned from 03 §1's visibility table and is frozen before
+# any classification runs. It is what stops the engine from contradicting
+# itself: Attempt 2 argued its corpus was blind to a phenomenon and then cited
+# percentages from it. Areas graded weak/none are excluded from the ranked index
+# (invariant I4) and appear greyed, labelled "not adjudicable from public text."
+#
+# Why that gate matters in the direction people forget: without it, OA-10 would
+# return a near-zero prevalence and the deck would read that as "forgetting is
+# not the problem", when it actually means "forgetting is not narratable". A low
+# number from a blind instrument is more dangerous than no number, because it
+# looks like evidence.
 # ============================================================================
 
-status: stub            # stub | frozen   <- loader raises unless "frozen"
-frozen_at: null         # ISO-8601 with offset, set at freeze time
-source_document: "03_engine_spec.md"
-taxonomy_version: null  # e.g. "tax_v1" — written into every labelled row
+status: frozen
+frozen_at: "2026-08-22T01:15:00+05:30"
+source_document: "03_engine_spec.md §4 (19 Aug 2026 revision)"
+taxonomy_version: "tax_v1"
 
-# Closed vocabularies. The classifier may not invent a code outside these.
-tree_nodes: [R, V, D, X, none]     # transcribe real node names from 03 §
-sub_nodes: []                      # TODO: from 03_engine_spec.md
+# 03 §3 record schema. Closed vocabularies; the classifier may not invent a code.
+tree_nodes: [R, V, D, X, none]
 
-# detectability grades gate S7 (invariant I4). Grades: strong | moderate | weak | none
-# An area graded weak/none carries oi = null and gate_reason, never a number.
-opportunity_areas: []
-# Expected shape once filled — 12 entries:
-#   - code: OA-01
-#     name: "..."
-#     definition: "one line, used verbatim in the classifier prompt"
-#     tree_node: R
-#     sub_node: "..."
-#     detectability: strong        # strong|moderate|weak|none
-#     detectability_rationale: "why public text can or cannot adjudicate this"
+sub_nodes:
+  - in_stock
+  - size_available
+  - still_listed
+  - conviction_fit
+  - conviction_quality
+  - closure
+  - reversal_tolerance
+  - recall
+  - checkout
+  - payment
+  - none
 
-temporal_stance:                   # NOT a stub — fully specified in 04 §4.4
+# The R→V→D→X chain (02_metric_decomposition.md §2 Level 3) is sequential:
+#   R  Return      — the saved item finds its way back to the user
+#   V  Viability   — the thing they wanted is still there, as wanted
+#   D  Decision    — the user can finish deciding
+#   X  Execution   — nothing in checkout eats the intent
+
+opportunity_areas:
+
+  - code: OA-01
+    name: "Size unavailable in wanted variant"
+    definition: "The item is listed but the speaker's size is not purchasable."
+    tree_node: V
+    sub_node: size_available
+    detectability: strong
+    detectability_rationale: >
+      Directly narrated in reviews and Q&A — "out of stock in my size within a
+      day" is a complete event and people write it down.
+    addressability: 1
+    addressability_rationale: "Fixable by stock signalling, size-level notify, or reservation. No monetary lever required."
+
+  - code: OA-02
+    name: "Item sold out or delisted after saving"
+    definition: "The item was available when saved and is gone, or removed from the list, when the speaker returns."
+    tree_node: V
+    sub_node: in_stock          # also covers `still_listed` for delisting
+    detectability: strong
+    detectability_rationale: >
+      "Item disappeared from my saved list", "price changed after I saved it" —
+      an event with a before and an after, which is what generates text.
+    addressability: 1
+    addressability_rationale: "Fixable by hold, notify-on-restock, or surfacing alternates."
+
+  - code: OA-03
+    name: "Size inconsistency across brands — cannot predict fit"
+    definition: "The speaker cannot tell what size to order because sizing varies by brand or listing."
+    tree_node: D
+    sub_node: conviction_fit
+    detectability: strong
+    detectability_rationale: "Abundant and explicit in both reviews and pre-purchase Q&A."
+    addressability: 1
+    addressability_rationale: "Fixable by fit data, per-brand size mapping, or review-derived fit signals."
+
+  - code: OA-04
+    name: "Quality vs. imagery mismatch"
+    definition: "What arrived, or what the speaker fears will arrive, does not match the product photography."
+    tree_node: D
+    sub_node: conviction_quality
+    detectability: strong
+    detectability_rationale: "One of the most common review themes in Indian fashion e-commerce."
+    addressability: 1
+    addressability_rationale: "Fixable by imagery standards, customer photos, and listing accuracy enforcement."
+
+  - code: OA-05
+    name: "Fabric / material uncertainty"
+    definition: "The speaker cannot establish what the item is made of, or how it will feel or wear."
+    tree_node: D
+    sub_node: conviction_quality
+    detectability: moderate
+    detectability_rationale: >
+      Present but often folded into general quality language rather than stated
+      as its own concern, so the boundary with OA-04 is genuinely fuzzy.
+    addressability: 1
+    addressability_rationale: "Fixable by material disclosure, fabric detail imagery, and care information."
+
+  - code: OA-06
+    name: "Return process friction"
+    definition: "Initiating or completing a return is hard: pickup failures, window disputes, process opacity."
+    tree_node: D
+    sub_node: reversal_tolerance
+    detectability: strong
+    detectability_rationale: "Abundant in the AJIO corpus and heavily represented on complaint aggregators."
+    addressability: 1
+    addressability_rationale: "Operational and process fix. No monetary lever required."
+
+  - code: OA-07
+    name: "Refund delay or dispute"
+    definition: "Money owed is late, partial, or contested after a return."
+    tree_node: D
+    sub_node: reversal_tolerance
+    detectability: strong
+    detectability_rationale: "Highly narratable — an unresolved refund is an ongoing grievance with a date attached."
+    addressability: 1
+    addressability_rationale: >
+      Refund SPEED is a process fix, not an incentive. This is not gated: paying
+      a refund that is already owed is not a monetary incentive.
+
+  - code: OA-08
+    name: "Exchange unavailable or hard"
+    definition: "The speaker wanted a different size or colour and could not simply swap."
+    tree_node: D
+    sub_node: reversal_tolerance
+    detectability: moderate
+    detectability_rationale: "Real but lower volume, and frequently conflated with returns in the text."
+    addressability: 1
+    addressability_rationale: "Fixable by offering an exchange flow. Process, not price."
+
+  - code: OA-09
+    name: "Cannot choose between similar options"
+    definition: "The speaker is weighing several comparable items and does not resolve."
+    tree_node: D
+    sub_node: closure
+    detectability: weak
+    detectability_rationale: >
+      Occasional "couldn't decide between", mostly in Reddit and YouTube
+      comments rather than reviews. GATED — no number is produced. A review is
+      written after an event; not-deciding is not an event.
+    addressability: 1
+    addressability_rationale: "Fixable by comparison and decision-support surfaces."
+
+  - code: OA-10
+    name: "Forgot / never came back"
+    definition: "The speaker saved an item and did not return to it."
+    tree_node: R
+    sub_node: recall
+    detectability: none
+    detectability_rationale: >
+      Almost no one narrates their own forgetting. GATED — this is the silent
+      non-event at the centre of the whole problem, and the single most
+      important row on the blind-spot register. Interviews and product analytics
+      only.
+    addressability: 1
+    addressability_rationale: "Fixable by reminders and re-surfacing — but see the notification-opt-out guardrail in 02 §4."
+
+  - code: OA-11
+    name: "Delivery timing uncertainty"
+    definition: "The speaker cannot establish when the item will arrive, or it arrived later than promised."
+    tree_node: D
+    sub_node: reversal_tolerance
+    detectability: strong
+    detectability_rationale: "The single most abundant theme in Play Store reviews for this category."
+    addressability: 1
+    addressability_rationale: "Fixable by accurate promises and logistics. Process, not price."
+
+  - code: OA-12
+    name: "Checkout / payment failure"
+    definition: "The order did not complete: payment declined, cart emptied, checkout errored."
+    tree_node: X
+    sub_node: checkout          # also covers `payment`
+    detectability: strong
+    detectability_rationale: "Concrete, dated, and reported immediately. Highly narratable."
+    addressability: 1
+    addressability_rationale: "Engineering fix."
+
+# --------------------------------------------------------------------------
+# Fields fully specified in 04 §4.4 — not stubs
+# --------------------------------------------------------------------------
+
+temporal_stance:
   - {code: pre_purchase,  definition: "speaker has not yet bought this item; includes all questions asked before ordering and all thinking-about / about-to / still-deciding language"}
   - {code: at_purchase,   definition: "speaker is in checkout or payment"}
   - {code: post_purchase, definition: "speaker has received or is awaiting an order"}
   - {code: unclear,       definition: "do not guess; unclear is a correct answer"}
 
-severity:                          # NOT a stub — 04 §4.4 rubric, published in appendix
+severity:
   - {level: 1, definition: "mild friction, speaker proceeded anyway"}
   - {level: 2, definition: "friction that changed what the speaker did"}
   - {level: 3, definition: "speaker abandoned, or states they will not use the service again"}
+
+# --------------------------------------------------------------------------
+# Reference source for the opportunity index (03 §5.2)
+# --------------------------------------------------------------------------
+# 03 §5.1 forbids mixing sources in a denominator, so OI is undefined unless one
+# reference source is named. AJIO PDP Q&A is it: pre-purchase by construction,
+# which is the property the whole index depends on. Every other source is a
+# robustness check — where the ranking flips, that flip is itself a finding
+# about which population is being heard.
+opportunity_index:
+  reference_source: pdp_qa
+  reference_stance: pre_purchase
+  formula: "prevalence x mean_severity x wishlist_proximity x addressability"
+  gated_by: detectability
