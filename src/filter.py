@@ -65,6 +65,7 @@ def classify_drop(
     spam_repeat_limit: int,
     text_counts: collections.Counter,
     brand_from_surface: bool = True,
+    near_dup_min_words: int = 10,
 ) -> str | None:
     """Return a drop reason, or None to keep. Order matters: most specific first."""
     text = (row.get("utterance_text") or "").strip()
@@ -72,17 +73,41 @@ def classify_drop(
     if not text:
         return "no_text"
 
-    if row.get("near_dup_of") and row["near_dup_of"] != f"{row['source']}:{row['source_id']}":
-        return "near_dup"
-
     toks = _tokens(text)
     if len(toks) < min_tokens:
         return "too_short"
 
+    # near_dup is checked AFTER too_short, and only above a word floor.
+    #
+    # The rule exists for syndication (04 §2.8) - the same complaint posted to
+    # three sites would triple-count. It is not meant to catch the thousands of
+    # people who independently write "good". Checked first and unfloored, it
+    # fired 31,278 times on this corpus with 98.1% of hits at <=4 words, which
+    # would have reported the corpus as half-duplicated when it is really half
+    # one-to-four-word generic praise.
+    #
+    # The denominator was never affected - those rows fail too_short either way -
+    # but the drop log is an appendix table, and a drop reason that tells the
+    # wrong story about the instrument is a finding stated falsely.
+    if len(text.split()) >= near_dup_min_words:
+        if row.get("near_dup_of") and row["near_dup_of"] != f"{row['source']}:{row['source_id']}":
+            return "near_dup"
+
+    # A URL in a short review is spammy regardless of length - no floor here.
     if _URL.search(text) and len(toks) < 15:
         return "spam"
-    if text_counts[row.get("text_sha1")] > spam_repeat_limit:
-        return "spam"
+
+    # The repeated-text branch gets the SAME word floor as near_dup, for the same
+    # reason. 04 §3 aims this rule at "promo/seller boilerplate", which is long
+    # and distinctive. Unfloored, it flagged 1,671 rows of which every single one
+    # was 3-8 words and none contained a URL - "best shopping app" x221 is 221
+    # people independently writing a natural phrase, not a spam campaign.
+    #
+    # Left in place it would have put a four-figure "spam" count in the appendix
+    # and implied the corpus was being manipulated.
+    if len(text.split()) >= near_dup_min_words:
+        if text_counts[row.get("text_sha1")] > spam_repeat_limit:
+            return "spam"
 
     if _NOT_SHOPPING.match(text) or _CRASH_ONLY.match(text):
         return "not_shopping"
@@ -110,6 +135,7 @@ def classify_drop(
 def run() -> dict[str, Any]:
     min_tokens = int(threshold("collection.min_tokens_after_stopwords"))
     spam_repeat_limit = int(threshold("collection.spam_repeat_source_ids"))
+    near_dup_min_words = int(threshold("collection.near_dup_min_words"))
 
     surface_brand = {
         name: bool(c.get("brand_established_by_surface", False))
@@ -141,6 +167,7 @@ def run() -> dict[str, Any]:
                 row, min_tokens=min_tokens, spam_repeat_limit=spam_repeat_limit,
                 text_counts=text_counts,
                 brand_from_surface=surface_brand.get(row["source"], False),
+                near_dup_min_words=near_dup_min_words,
             )
             if reason:
                 drops[reason] += 1
@@ -179,6 +206,37 @@ def run() -> dict[str, Any]:
     with (LOGS / "s4_report.jsonl").open("a", encoding="utf-8", newline="\n") as fh:
         fh.write(json.dumps(report, ensure_ascii=False) + "\n")
     return report
+
+
+def derive_near_dup_floor(drop_log: Any = None) -> dict[str, Any]:
+    """Re-derive the near-dup word floor from an observed collision distribution.
+
+    The floor sits where the collision count PLATEAUS: below it, identical text
+    is coincidence (independent short praise); at and above it, the count stops
+    falling, which is what genuine duplication looks like.
+    """
+    import collections as _c
+    import json as _j
+
+    path = drop_log or (LOGS / "drop_log.jsonl")
+    rows = [_j.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
+    nd = [r for r in rows if r["reason"] == "near_dup"]
+    if not nd:
+        return {"floor": None, "note": "no near_dup drops logged; nothing to derive from"}
+
+    lens = _c.Counter(len(r["text"].split()) for r in nd)
+    remaining, curve = len(nd), []
+    for w in range(1, 21):
+        remaining -= lens.get(w, 0)
+        curve.append({"min_words": w + 1, "collisions_remaining": remaining})
+
+    floor = None
+    for i in range(1, len(curve) - 1):
+        if curve[i]["collisions_remaining"] == curve[i + 1]["collisions_remaining"]:
+            floor = curve[i]["min_words"]
+            break
+    return {"floor": floor, "curve": curve,
+            "rule": "first word count at which the collision count stops falling"}
 
 
 def read_filtered() -> Iterator[dict[str, Any]]:

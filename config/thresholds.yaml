@@ -95,6 +95,24 @@ collection:
     value: 1.0
     source: "decision:04_scraper_requirements.md §2.8 — exact sha1(normalised_text) match only; fuzzy near-dup thresholds are taste and are not used"
 
+  near_dup_min_words:
+    value: 10
+    source: "derived:src.filter.derive_near_dup_floor"
+    note: >
+      Word floor below which identical text is treated as COINCIDENCE rather
+      than duplication. Derived from the observed collision distribution over
+      79,199 utterances on 22 Aug 2026: collisions fall steeply with length
+      (20.4% of corpus at >=2 words, 2.3% at >=4, 0.20% at >=6, 0.043% at >=8)
+      and then PLATEAU at 23 collisions from 10 words onward. The plateau is the
+      signal: below it, identical text is thousands of people independently
+      writing "good" or "nice app"; at and above it, the count is stable, which
+      is what genuine duplication looks like.
+      Without this floor the near-dup rule fired 31,278 times and 98.1% of those
+      were <=4 words - reporting the corpus as half-duplicated when it is really
+      half one-to-four-word generic praise. The denominator was unaffected
+      (those rows fail too_short regardless), but the drop log is an appendix
+      output and the attribution has to be true.
+
   short_review_word_floor:
     value: 8
     source: "decision:04_scraper_requirements.md §3 — reviews under ~8 words emit as a single utterance, not split"
