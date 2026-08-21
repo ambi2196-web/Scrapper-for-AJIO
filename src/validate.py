@@ -27,9 +27,10 @@ from __future__ import annotations
 
 import json
 import math
+import random
 from typing import Any
 
-from src.config import ROOT, threshold
+from src.config import ROOT, load_taxonomy, threshold
 from src.envelope import now_ist
 
 LABELLED = ROOT / "data" / "labelled"
@@ -168,6 +169,77 @@ def derive_sample_size(smallest_reportable_p: float, smallest_claimed_diff: floa
         "inputs": {"smallest_reportable_proportion": p, "smallest_claimed_differential": smallest_claimed_diff},
         "rule": "Wilson half-width on the smallest reported area < half the smallest claimed differential",
         "write_to": "config/thresholds.yaml validation.human_sample_size_n",
+    }
+
+
+def build_gold_sheet(n: int = 100, seed: int = 20260822) -> dict[str, Any]:
+    """Blind hand-labelling sheet for the B-sweep, drawn BEFORE any classification.
+
+    Distinct from `build_labelling_sheet`, which stratifies on model
+    disagreement and therefore cannot exist until lanes A and C have run. The
+    B-sweep needs gold labels *first* (04 §4.3: sweep B against a fixed
+    100-utterance gold subset), so this samples from the S4b output directly.
+
+    Stratified by (source, brand) so the sweep is not dominated by whichever
+    cell happens to be largest, and seeded so the same 100 utterances are used
+    on every re-run - a moving gold set would make two sweeps incomparable.
+
+    Blind by construction: the sheet carries the text and nothing else. There is
+    no model label to see yet, which is the one advantage of labelling at this
+    point in the pipeline.
+    """
+    import pandas as pd
+
+    from src.sample import read_sampled
+
+    rows = list(read_sampled())
+    if not rows:
+        raise RuntimeError("no sampled utterances - run S4b first")
+
+    strata: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        strata.setdefault((row["source"], row["brand"]), []).append(row)
+
+    rng = random.Random(seed)
+    per = max(1, n // max(1, len(strata)))
+    picked: list[dict[str, Any]] = []
+    for key in sorted(strata):
+        bucket = sorted(strata[key], key=lambda r: r["utterance_id"])
+        picked.extend(rng.sample(bucket, min(per, len(bucket))))
+
+    # Top up from the pool at large if rounding left the sheet short.
+    if len(picked) < n:
+        chosen = {r["utterance_id"] for r in picked}
+        rest = sorted((r for r in rows if r["utterance_id"] not in chosen),
+                      key=lambda r: r["utterance_id"])
+        picked.extend(rng.sample(rest, min(n - len(picked), len(rest))))
+
+    sheet = pd.DataFrame([{
+        "utterance_id": r["utterance_id"],
+        "source": r["source"], "brand": r["brand"],
+        "language": r.get("language"), "url": r.get("url"),
+        "utterance_text": r["utterance_text"],
+        "opportunity_area": "", "temporal_stance": "", "severity": "",
+        "hesitation_marker": "", "labeller_note": "",
+    } for r in picked])
+
+    GOLD.mkdir(parents=True, exist_ok=True)
+    path = GOLD / "gold_sheet_TEMPLATE.csv"
+    sheet.to_csv(path, index=False, encoding="utf-8-sig")
+
+    tax = load_taxonomy()
+    return {
+        "path": str(path.relative_to(ROOT)),
+        "n": len(sheet),
+        "strata": {f"{s}/{b}": len(v) for (s, b), v in sorted(strata.items())},
+        "seed": seed,
+        "valid_opportunity_area": [a["code"] for a in tax["opportunity_areas"]] + ["none"],
+        "valid_temporal_stance": [t["code"] for t in tax["temporal_stance"]],
+        "valid_severity": [s["level"] for s in tax["severity"]],
+        "next": (
+            "Fill the blank columns, save as data/gold/human_labels.csv, then run "
+            "`python -m src.cli classify sweep-b` to derive batch_size_B."
+        ),
     }
 
 

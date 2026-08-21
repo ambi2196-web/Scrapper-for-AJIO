@@ -187,8 +187,15 @@ smaller than the app's advertised review count.
 
 ### 4a · Derive B before the bulk run (~1h)
 ```bash
+python -m src.cli gold-sheet --n 100     # blind sheet, stratified by source x brand
+# hand-label it, save as data/gold/human_labels.csv
 python -m src.cli classify sweep-b
 ```
+
+The gold sheet has to be drawn *before* classification, which is why it is a
+separate command from `labelling-sheet`: that one stratifies on model
+disagreement and cannot exist until lanes A and C have run. Labelling at this
+point is blind by construction — there is no model guess to see yet.
 Sweep B ∈ {5,10,20,40} against a fixed 100-utterance gold subset. Take the
 largest B whose accuracy is statistically indistinguishable from B=5. Throughput
 rises monotonically with B, so quality is the only limit and measuring it is the

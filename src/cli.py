@@ -152,6 +152,12 @@ def cmd_validate(args: argparse.Namespace) -> None:
         _print(validate.derive_sample_size(args.smallest_p, args.smallest_diff))
 
 
+def cmd_gold_sheet(args: argparse.Namespace) -> None:
+    from src import validate
+
+    _print(validate.build_gold_sheet(n=args.n, seed=args.seed))
+
+
 def cmd_labelling_sheet(args: argparse.Namespace) -> None:
     from src import validate
 
@@ -239,6 +245,11 @@ def build_parser() -> argparse.ArgumentParser:
     va.add_argument("--smallest-p", type=float, default=0.05)
     va.add_argument("--smallest-diff", type=float, default=0.05)
     va.set_defaults(func=cmd_validate)
+
+    gs = sub.add_parser("gold-sheet", help="pre-S5 blind gold sheet for the B-sweep")
+    gs.add_argument("--n", type=int, default=100)
+    gs.add_argument("--seed", type=int, default=20260822)
+    gs.set_defaults(func=cmd_gold_sheet)
 
     ls = sub.add_parser("labelling-sheet", help="S6 - blind hand-labelling sheet")
     ls.add_argument("--n", type=int, required=True)

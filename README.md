@@ -59,7 +59,8 @@ python -m src.cli segment                # S3
 python -m src.cli filter                 # S4
 python -m src.cli sample                 # S4b random downsample within the window
 python -m src.cli freeze-proximity       #     I8 — before any classification
-python -m src.cli classify sweep-b       # S5  derive the batch size
+python -m src.cli gold-sheet --n 100     #     hand-label this, save as human_labels.csv
+python -m src.cli classify sweep-b       # S5  derive the batch size from it
 python -m src.cli classify a             #     bulk pass
 python -m src.cli classify c             #     independent second annotator
 python -m src.cli classify consolidate
