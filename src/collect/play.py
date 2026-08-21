@@ -58,20 +58,32 @@ class PlayCollector(Collector):
                 if not batch:
                     break
 
+                exhausted_window = False
                 for row in batch:
                     rid = row.get("reviewId")
                     if not rid or rid in seen:
                         continue
+                    # Reviews arrive NEWEST-first, so the first row older than the
+                    # window means every remaining row is too. Stop the whole
+                    # language here rather than paging on.
+                    if not self.in_window(row.get("at")):
+                        exhausted_window = True
+                        break
                     seen.add(rid)
                     per_lang += 1
                     yield self._to_envelope(row, pkg, lang)
 
                 pages += 1
                 self.log_event("page", {"lang": lang, "page": pages, "rows": len(batch)})
+
+                if exhausted_window:
+                    self.log_event("window_boundary_reached", {
+                        "lang": lang, "collected": per_lang,
+                        "window_days": self.window_days,
+                    })
+                    break
                 if token is None:
                     break
-                # Half the cap per language, so neither language starves the other
-                # and the en/hi mix stays comparable across brands.
                 if per_lang >= self.cap:
                     break
                 self.sleep()

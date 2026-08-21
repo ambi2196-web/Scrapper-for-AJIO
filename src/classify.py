@@ -23,7 +23,7 @@ from pydantic import ValidationError
 
 from src.config import ROOT, load_lexicon, load_proximity, load_taxonomy, threshold
 from src.envelope import now_ist
-from src.filter import read_filtered
+from src.sample import read_sampled as read_filtered
 from src.llm import gemini, groq
 from src.llm.router import LANES, QuotaExhausted, Router
 from src.llm.schema import Label, check_evidence, response_json_schema, validate_against_taxonomy

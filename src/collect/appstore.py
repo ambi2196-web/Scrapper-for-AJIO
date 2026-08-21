@@ -1,17 +1,42 @@
-"""S1 - Apple App Store reviews (country: in).
+"""S1 - Apple App Store reviews (country: in), via Apple's own RSS JSON feed.
 
-Low volume by construction - Apple caps public review pagination hard. The value
-here is not prevalence in its own right; it is a second structurally-matched
-surface. If a differential shows on Play and vanishes on the App Store, that is
-information about the instrument rather than about the brands, and it is worth
-knowing before the number reaches a slide.
+Not `app-store-scraper`. That library is listed in 04 §2.2 and is broken against
+urllib3 v2: it imports `urllib3.packages.six.moves`, removed in the v2 release.
+Pinning urllib3 back would have fixed the import while dragging a deprecated
+transport into every other collector, so the dependency is dropped instead.
+
+Apple publishes the same data itself at
+
+    https://itunes.apple.com/{country}/rss/customerreviews/page={n}/id={app_id}/sortby=mostrecent/json
+
+which needs no library beyond httpx, returns 50 reviews per page with ratings,
+versions and timestamps, and is a first-party endpoint rather than a scrape.
+
+Volume is low by construction - Apple caps public pagination at ten pages, so
+~500 reviews per app. The value here is not prevalence in its own right; it is a
+second structurally-matched surface. If a differential shows on Play and
+vanishes on the App Store, that is information about the instrument rather than
+about the brands, and it is worth knowing before the number reaches a slide.
+
+This surface also carries the FULL comparison set from 03 §2 Tier 3 - AJIO,
+Myntra and Nykaa Fashion - which Play cannot, because Nykaa Fashion has no
+separately installable Play listing in India (see D4).
 """
 from __future__ import annotations
 
+import html
+import re
 from typing import Any, Iterator
 
 from src.collect.base import Collector, CollectorError
 from src.envelope import Envelope
+
+FEED = (
+    "https://itunes.apple.com/{country}/rss/customerreviews"
+    "/page={page}/id={app_id}/sortby=mostrecent/json"
+)
+MAX_PAGES = 10          # Apple's public ceiling; page 11+ returns no entries
+_TAGS = re.compile(r"<[^>]+>")
 
 
 class AppStoreCollector(Collector):
@@ -25,53 +50,89 @@ class AppStoreCollector(Collector):
                 "  sources.yaml ships null for unverified ids on purpose, so this\n"
                 "  stops rather than collecting an empty slice that looks like a\n"
                 "  real finding of 'no reviews'.\n"
-                "  Find the id in the App Store URL: /app/<name>/id<APP_ID>"
+                "  Resolve it via https://itunes.apple.com/search?term=<name>&country=in&entity=software"
             )
         return entry
 
     def fetch(self) -> Iterator[Envelope]:
-        try:
-            from app_store_scraper import AppStore
-        except ImportError as exc:
-            raise CollectorError("pip install app-store-scraper") from exc
+        import httpx
 
         app = self._app()
-        scraper = AppStore(
-            country=self.cfg.get("country", "in"),
-            app_name=app["app_name"],
-            app_id=app["app_id"],
-        )
-        # how_many is a ceiling, not a promise; Apple returns what it returns.
-        scraper.review(how_many=self.cap, sleep=self.defaults.get("request_delay_seconds", 2))
+        country = self.cfg.get("country", "in")
+        headers = {"User-Agent": self.user_agent, "Accept": "application/json"}
 
-        for row in scraper.reviews:
-            yield self._to_envelope(row, app)
+        returned = 0
+        in_window = 0
+        with httpx.Client(headers=headers, timeout=30.0, follow_redirects=True) as client:
+            for page in range(1, MAX_PAGES + 1):
+                url = FEED.format(country=country, page=page, app_id=app["app_id"])
+                try:
+                    resp = client.get(url)
+                    resp.raise_for_status()
+                    entries = (resp.json().get("feed") or {}).get("entry") or []
+                except Exception as exc:
+                    self.log_event("page_error", {"page": page, "error": str(exc)})
+                    break
 
-        self.log_event("run", {"app_id": app["app_id"], "returned": len(scraper.reviews)})
+                # Page 1 prepends an app-metadata entry that has no im:rating.
+                reviews = [e for e in entries if "im:rating" in e]
+                if not reviews:
+                    break
 
-    def _to_envelope(self, row: dict[str, Any], app: dict[str, Any]) -> Envelope:
-        posted = row.get("date")
-        # app-store-scraper exposes no stable review id, so derive a deterministic
-        # one. It must be stable across re-runs or dedupe and T3 both break.
-        import hashlib
+                for entry in reviews:
+                    returned += 1
+                    env = self._to_envelope(entry, app)
+                    # Apple does not guarantee strict newest-first across pages,
+                    # so filter rather than break - breaking early would silently
+                    # truncate the window.
+                    if not self.in_window(env.posted_at):
+                        continue
+                    in_window += 1
+                    yield env
 
-        raw = f"{app['app_id']}|{posted}|{row.get('title','')}|{row.get('review','')}"
-        source_id = "as:" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
+                self.log_event("page", {"page": page, "rows": len(reviews)})
+                if page < MAX_PAGES:
+                    self.sleep()
 
-        title = (row.get("title") or "").strip()
-        body = (row.get("review") or "").strip()
+        self.log_event("run", {
+            "app_id": app["app_id"], "returned": returned, "in_window": in_window,
+            "window_days": self.window_days,
+            "note": (
+                "Apple caps public pagination at ~500 reviews. If in_window is much "
+                "smaller than returned, this surface does not reach back a full "
+                "window and its period parity must be checked before it carries a "
+                "differential."
+            ),
+        })
+
+    def _to_envelope(self, entry: dict[str, Any], app: dict[str, Any]) -> Envelope:
+        def label(key: str) -> str:
+            node = entry.get(key)
+            return (node or {}).get("label", "") if isinstance(node, dict) else ""
+
+        title = label("title").strip()
+        body = _TAGS.sub("", html.unescape(label("content"))).strip()
         # Title and body are concatenated because App Store titles carry real
         # signal ("Sizes never match") and dropping them loses utterances.
         text = f"{title}. {body}".strip(". ").strip() if title else body
 
+        rating = label("im:rating")
+        votes = label("im:voteCount")
+
         return Envelope(
             source=self.name,
             brand=self.brand,
-            source_id=source_id,
-            url=f"https://apps.apple.com/in/app/{app['app_name']}/id{app['app_id']}",
-            posted_at=posted.isoformat() if hasattr(posted, "isoformat") else posted,
+            source_id=f"as:{label('id')}",
+            url=f"https://apps.apple.com/{self.cfg.get('country', 'in')}/app/id{app['app_id']}",
+            posted_at=label("updated") or None,
             raw_text=text,
-            rating=row.get("rating"),
-            helpful_votes=None,
-            meta={"app_id": app["app_id"], "title": title, "developer_response": row.get("developerResponse")},
+            rating=int(rating) if rating.isdigit() else None,
+            helpful_votes=int(votes) if votes.isdigit() else None,
+            meta={
+                "app_id": app["app_id"],
+                "title": title,
+                "app_version": label("im:version"),
+                # author is deliberately NOT stored - not needed for any analysis
+                # here, and a public repo is a poor place for it.
+            },
         )

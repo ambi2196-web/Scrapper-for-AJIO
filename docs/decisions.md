@@ -66,6 +66,41 @@ the differential while Reddit and YouTube still carry mechanism.
 
 ---
 
+### D4 · Comparison set
+**Settled:** 22 Aug 2026 · **Decision:** per-surface, because the brands are not
+available on both.
+
+| Surface | Focal | Pool |
+|---|---|---|
+| Play | AJIO | Myntra + Urbanic |
+| App Store | AJIO | Myntra + Nykaa Fashion |
+
+**Nykaa Fashion is not collectable on Play.** The id in 03 §2
+(`com.fsn.nykaa.nykaafashion`) returns 404, and a Play search surfaces the
+listing "Nykaa Fashion - Shopping App" with a **null appId** — indexed but not
+separately installable in India, most likely folded into `com.fsn.nykaa`.
+
+`com.fsn.nykaa` is Nykaa **Beauty** and was rejected as a substitute. Sizing and
+fit frictions barely exist for beauty, so pooling it would import a different
+friction profile and would flatter AJIO on exactly the areas the engine is
+built to measure.
+
+**Urbanic** (`com.urbanic`, 87,393 ratings) replaces it on Play. It is
+fashion-pure and closest to AJIO in positioning — preferred over higher-volume
+but differently-positioned marketplaces (Meesho, Flipkart, Amazon), whose
+value/general-marketplace framing brings a different customer segment.
+
+Its low velocity is handled by the common window rather than a count cap: it
+contributes roughly 330 reviews in 90 days. That is a small denominator whose
+Wilson interval will be wide and may be suppressed by `min_cell_n` — the honest
+outcome rather than a hidden one.
+
+**All ids verified live 22 Aug 2026** — Play via title and rating count,
+App Store via the iTunes lookup API. AJIO `com.ril.ajio` / `1113425372`,
+Myntra `com.myntra.android` / `907394059`, Nykaa Fashion `1439872423`.
+
+---
+
 ### D5 · `wishlist_proximity` values
 **Settled:** 22 Aug 2026 · **Frozen:** before any classification ran ·
 **Commit:** `406dcc7`
@@ -108,6 +143,27 @@ prevalence instead.
 **Enforced by:** `config/proximity.yaml` carries `frozen_at` and `frozen_commit`;
 `src/config.py` compares the file mtime and S5 refuses to start if it was touched
 later. `freeze_proximity()` also refuses to freeze any weight lacking a `reason`.
+
+---
+
+### D6 · Reddit and YouTube cut
+**Settled:** 22 Aug 2026
+
+Both cut before collection. `sources.yaml` sets `enabled: false` for each.
+
+**What is lost, stated plainly:** these were the only two sources carrying
+closure and intent language — the places where people narrate the part of the
+decision where they *didn't* buy. Losing them means **OA-09 (cannot choose
+between similar options) loses its main evidence surface**, which reinforces
+rather than changes its `weak` detectability grade: it was already gated and
+will remain so.
+
+The engine keeps Play (3 brands), the App Store (3 brands), PDP Q&A and the
+complaint aggregators. That combination still supports the reference source,
+the differential and the full S6 validation — which 04 §8 names as everything
+the deck actually needs.
+
+Neither source was denominator-eligible, so no prevalence figure changes.
 
 ---
 
@@ -181,25 +237,6 @@ The deployed app performs no scraping and makes no LLM calls.
 deployed dashboard has no library capable of an outbound call. It is also why the
 Cloud build is fast and needs no secrets.
 
-### B9 · I8 enforced by content hash, not file mtime
-**Settled:** 22 Aug 2026 · **Departs from 04 §0, deliberately**
-
-04 §0 specifies that S5 "refuses to start if `config/proximity.yaml` has an
-mtime later than its recorded `frozen_at`". That check cannot work for a
-git-tracked file: `git clone` and `actions/checkout` stamp every file with the
-checkout time, so a fresh clone always looks modified and CI failed on exactly
-this. Meanwhile a real edit could be hidden with `touch -d`.
-
-It fails in both directions — false alarm on an honest clone, silent pass on a
-dishonest edit — so it is replaced with a SHA-256 fingerprint over `weights` and
-`scale`, recorded as `frozen_sha256` at freeze time and re-verified on every
-load.
-
-This is strictly stronger and states the invariant more precisely: **touching
-the file is harmless; changing the weights is the violation.** Two tests cover
-both directions — a tampered weight raises, and a file whose mtime is a day in
-the future loads clean.
-
 ### B7 · `addressability` implemented as a hard gate, not a weight
 **Settled:** 22 Aug 2026
 
@@ -225,6 +262,62 @@ sources, that flip is itself a finding about which population is being heard.
 
 Recorded in `taxonomy.yaml opportunity_index`, and `src/quantify.py` flags
 `is_reference_cell` on every row.
+
+---
+
+### B9 · I8 enforced by content hash, not file mtime
+**Settled:** 22 Aug 2026 · **Departs from 04 §0, deliberately**
+
+04 §0 specifies that S5 "refuses to start if `config/proximity.yaml` has an
+mtime later than its recorded `frozen_at`". That check cannot work for a
+git-tracked file: `git clone` and `actions/checkout` stamp every file with the
+checkout time, so a fresh clone always looks modified and CI failed on exactly
+this. Meanwhile a real edit could be hidden with `touch -d`.
+
+It fails in both directions — false alarm on an honest clone, silent pass on a
+dishonest edit — so it is replaced with a SHA-256 fingerprint over `weights` and
+`scale`, recorded as `frozen_sha256` at freeze time and re-verified on every
+load.
+
+This is strictly stronger and states the invariant more precisely: **touching
+the file is harmless; changing the weights is the violation.** Two tests cover
+both directions — a tampered weight raises, and a file whose mtime is a day in
+the future loads clean.
+
+### B10 · Common time window replaces equal per-brand counts
+**Settled:** 22 Aug 2026 · **Departs from 04 §2.1, deliberately**
+
+04 §2.1 mandates equal per-brand caps so that proportions are not "measured on
+differently-deep slices of the review timeline". Measured on 22 Aug 2026, an
+equal 4,000-review cap produces:
+
+| Brand | Reviews | Window |
+|---|---|---|
+| AJIO | 4,000 | 40 days |
+| Myntra | 4,000 | 7 days |
+| Urbanic | 4,000 | 1,094 days |
+
+Review velocity differs by roughly 100×, so **equal counts produce wildly
+unequal windows** — precisely the contamination the rule exists to prevent.
+Comparing AJIO's last 40 days against Urbanic's last three years spans different
+app versions, pricing regimes and festive seasons.
+
+Equal counts is the wrong instrument for the spec's own goal. What must match
+across brands is the **period**. Unequal n is harmless: a proportion's
+denominator is its own n, and both the Wilson interval and the two-proportion
+z-test handle unequal n natively.
+
+**The rule is now:** collect everything inside a common 90-day window, then
+randomly downsample within it to bound the classification budget. The
+downsample must be random — taking the newest n would silently reintroduce
+unequal windows.
+
+90 days was chosen so a single sale event cannot dominate, while keeping the
+Myntra pull tractable (~51k reviews).
+
+**T10 is restated accordingly:** it now asserts window parity within 3 days
+rather than count parity within 10%. `check_window_parity()` also fails loudly
+if any brand hit the scrape safety ceiling, because that truncates its window.
 
 ---
 

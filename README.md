@@ -57,6 +57,7 @@ python -m src.cli verify-raw             #     confirm raw is untouched
 python -m src.cli normalise              # S2
 python -m src.cli segment                # S3
 python -m src.cli filter                 # S4
+python -m src.cli sample                 # S4b random downsample within the window
 python -m src.cli freeze-proximity       #     I8 — before any classification
 python -m src.cli classify sweep-b       # S5  derive the batch size
 python -m src.cli classify a             #     bulk pass
@@ -131,8 +132,8 @@ prompts/         versioned classifier prompts (classifier_version in every row)
 src/
   collect/       S1 — one module per source, all emitting one envelope
   llm/           router (rate limits, ledger, retry) · gemini · groq · schema
-  normalise.py segment.py filter.py classify.py validate.py
-  quantify.py compare.py emit.py cli.py
+  normalise.py segment.py filter.py sample.py classify.py
+  validate.py quantify.py compare.py emit.py cli.py
 views/           Streamlit views (0 Overview - 6 Blind spots)
 dashboard/       shared data-access layer for the views
 data/

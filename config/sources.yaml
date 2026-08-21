@@ -8,11 +8,42 @@ defaults:
   user_agent: "ajio-engine/0.1 (research; contact via repo issues)"
   respect_robots_txt: true
 
-# Equal caps across brands are load-bearing (04 §2.1): an unequal cap
-# contaminates the §5.3 differential because the two proportions would be
-# measured on differently-deep slices of the review timeline.
-brand_cap_per_source: 4000
-brand_cap_tolerance: 0.10        # T10 asserts collected counts within this of each other
+# ---------------------------------------------------------------------------
+# COMMON TIME WINDOW, not a common count. Departs from 04 §2.1 deliberately.
+#
+# 04 §2.1 mandates equal per-brand caps to avoid "differently-deep slices of the
+# review timeline". Measured on 22 Aug 2026, an equal 4,000-review cap produces:
+#     AJIO     4,000 reviews ->    40 days
+#     Myntra   4,000 reviews ->     7 days
+#     Urbanic  4,000 reviews -> 1,094 days
+# Review velocity differs by ~100x, so equal counts produce wildly UNEQUAL
+# windows - the exact contamination the rule exists to prevent. Comparing
+# AJIO's last 40 days against Urbanic's last three years spans different app
+# versions, pricing regimes and festive seasons.
+#
+# Equal counts is the wrong instrument for the spec's own goal. What must match
+# across brands is the PERIOD; unequal n is harmless because a proportion's
+# denominator is its own n, and Wilson intervals and the two-proportion z-test
+# both handle unequal n natively.
+#
+# So: collect everything inside a common window, then randomly downsample within
+# it to bound the classification budget. Sampling the NEWEST n would silently
+# reintroduce unequal windows, so the downsample must be random.
+# ---------------------------------------------------------------------------
+collection_window_days: 90
+
+# Utterances classified per (source, brand) cell. A BUDGET, not a threshold.
+# Derivation: Gemini free tier ceilings are ~30,000 utterances/day (04 §4.1).
+# The window yields far more than that - roughly 11k AJIO reviews and ~50k
+# Myntra - so the corpus is randomly downsampled within the window at S4b.
+# 6,000 per cell x ~5 denominator-eligible cells leaves headroom inside one
+# day's quota for the lane B escalation tail and a re-run after a prompt fix.
+# Cells with less than this are censused, not padded - Urbanic contributes what
+# it has, and its Wilson interval widens accordingly.
+classification_target_per_cell: 6000
+brand_cap_per_source: 60000      # safety ceiling on scrape time, not a sampling rule
+brand_cap_tolerance: 0.10        # T10 now asserts WINDOW parity, not count parity
+window_parity_tolerance_days: 3  # per-brand observed spans must agree within this
 
 sources:
 
@@ -24,24 +55,45 @@ sources:
     langs: ["en", "hi"]
     country: "in"
     sort: "NEWEST"
+    # VERIFIED against live listings 22 Aug 2026 (title + rating count returned).
     brands:
-      ajio:          "com.ril.ajio"
-      myntra:        "com.myntra.android"
-      nykaa_fashion: "com.fsn.nykaa.nykaafashion"
-    # VERIFY each package id on the Play listing before running.
-    # A wrong id fails silently by returning [], not by raising. S1 asserts len>0.
+      ajio:    "com.ril.ajio"         # AJIO Online Shopping App - 6,123,138 ratings
+      myntra:  "com.myntra.android"   # Myntra - Fashion Shopping App - 5,749,778 ratings
+      urbanic: "com.urbanic"          # Urbanic - Fashion from London - 87,393 ratings
+    # Urbanic is fashion-pure and closest to AJIO in positioning, which is why it
+    # is preferred over higher-volume but differently-positioned marketplaces.
+    # Its low velocity is handled by the common window rather than by a count cap:
+    # it contributes ~330 reviews in 90 days, a small denominator whose Wilson
+    # interval will be wide - and may be suppressed by min_cell_n, which is the
+    # honest outcome rather than a hidden one.
+    # NYKAA FASHION IS NOT COLLECTABLE ON PLAY. The spec's id
+    # (com.fsn.nykaa.nykaafashion) 404s, and a Play search returns the listing
+    # "Nykaa Fashion - Shopping App" with a null appId - i.e. indexed but not
+    # separately installable in India, most likely folded into com.fsn.nykaa.
+    # com.fsn.nykaa is Nykaa BEAUTY and is NOT a substitute: sizing and fit
+    # frictions barely exist for beauty, so pooling it would import a different
+    # friction profile into the comparison and flatter AJIO on exactly the areas
+    # the engine cares about.
+    # The brand IS available on the App Store (see below), so the spec's intended
+    # comparison set survives there. See D4 in docs/decisions.md.
 
   appstore:
     enabled: true
     denominator_eligible: true
+    # Apple's public review pagination is shallow. This bounds the pull; the
+    # 90-day window is applied as a post-filter because Apple does not return
+    # strict newest-first, so there is no reliable boundary to stop at.
+    max_reviews_per_brand: 2000
     brand_established_by_surface: true
     structurally_matched_group: "app_store_review"
     country: "in"
+    # VERIFIED via the iTunes lookup API 22 Aug 2026 - all three resolve.
+    # This surface carries the FULL comparison set from 03 §2 Tier 3, which Play
+    # cannot; it is low volume but structurally complete.
     brands:
-      ajio:          {app_name: "ajio-online-shopping", app_id: 1113425372}
-      myntra:        {app_name: "myntra-online-shopping-app", app_id: 907394059}
-      nykaa_fashion: {app_name: "nykaa-fashion", app_id: null}
-    # ^ app ids MUST be verified live. Placeholder deliberately invalid so it fails loud.
+      ajio:          {app_name: "ajio-online-shopping-app", app_id: 1113425372}
+      myntra:        {app_name: "myntra-fashion-shopping-app", app_id: 907394059}
+      nykaa_fashion: {app_name: "nykaa-fashion-shopping-app", app_id: 1439872423}
 
   pdp_qa:
     enabled: true
@@ -93,7 +145,7 @@ sources:
     priority: 2                  # cut before pdp_qa if time collapses
 
   reddit:
-    enabled: true
+    enabled: false               # CUT 22 Aug 2026 - see D6 in docs/decisions.md
     brand_established_by_surface: false  # attribution comes from the text
     denominator_eligible: false  # small, self-selected. Mechanism + verbatims only.
     structurally_matched_group: "forum"
@@ -108,7 +160,7 @@ sources:
     search_all_query: 'ajio OR myntra OR "nykaa fashion"'
 
   youtube:
-    enabled: true
+    enabled: false               # CUT 22 Aug 2026 - see D6 in docs/decisions.md
     brand_established_by_surface: false
     denominator_eligible: false
     structurally_matched_group: "video_comments"

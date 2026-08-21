@@ -38,7 +38,7 @@ COLLECTORS = {
 def cmd_collect(args: argparse.Namespace) -> None:
     import importlib
 
-    from src.collect.base import check_equal_caps
+    from src.collect.base import check_window_parity
 
     cfg = load_sources()
     module_name, class_name = COLLECTORS[args.source]
@@ -51,16 +51,16 @@ def cmd_collect(args: argparse.Namespace) -> None:
     for brand in brands:
         print(f"[collect] {args.source}/{brand} ...", file=sys.stderr)
         try:
-            stats[brand] = cls(brand=brand, cap=args.cap).run()
+            stats[brand] = cls(brand=brand, cap=args.cap, window_days=args.window_days).run()
         except Exception as exc:
             stats[brand] = {"error": str(exc)}
             print(f"[collect] {args.source}/{brand} FAILED: {exc}", file=sys.stderr)
 
     ok = {b: s for b, s in stats.items() if "error" not in s}
     if len(ok) > 1:
-        warnings = check_equal_caps(ok, cfg["brand_cap_tolerance"])
+        warnings = check_window_parity(ok, cfg.get("window_parity_tolerance_days", 3))
         if warnings:
-            stats["_equal_cap_warnings"] = warnings
+            stats["_window_parity_warnings"] = warnings
     _print(stats)
 
 
@@ -96,6 +96,12 @@ def cmd_filter(_: argparse.Namespace) -> None:
     from src import filter as filter_stage
 
     _print(filter_stage.run())
+
+
+def cmd_sample(args: argparse.Namespace) -> None:
+    from src import sample
+
+    _print(sample.run(target_per_cell=args.target, seed=args.seed))
 
 
 # --------------------------------------------------------------------------
@@ -199,7 +205,8 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("collect", help="S1 - collect one source")
     c.add_argument("source", choices=sorted(COLLECTORS))
     c.add_argument("--brands", nargs="*", help="default: all brands in sources.yaml")
-    c.add_argument("--cap", type=int, help="override the per-brand cap (equal caps matter)")
+    c.add_argument("--cap", type=int, help="safety ceiling on rows per brand (not the sampling rule)")
+    c.add_argument("--window-days", type=int, help="override the common collection window")
     c.set_defaults(func=cmd_collect)
 
     v = sub.add_parser("verify-raw", help="re-hash the raw store against its manifest (I1)")
@@ -212,6 +219,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("segment", help="S3").set_defaults(func=cmd_segment)
     sub.add_parser("filter", help="S4").set_defaults(func=cmd_filter)
+
+    sm = sub.add_parser("sample", help="S4b - random downsample within the window")
+    sm.add_argument("--target", type=int, help="utterances per (source, brand) cell")
+    sm.add_argument("--seed", type=int, default=20260822)
+    sm.set_defaults(func=cmd_sample)
     sub.add_parser("freeze-proximity", help="stamp and freeze proximity.yaml (I8)").set_defaults(
         func=cmd_freeze_proximity)
 

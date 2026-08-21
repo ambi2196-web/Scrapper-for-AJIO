@@ -145,7 +145,20 @@ place to size one.
 python -m src.cli normalise   # S2
 python -m src.cli segment     # S3
 python -m src.cli filter      # S4
+python -m src.cli sample      # S4b
 ```
+
+**S4b** is new, and follows from B10. Collecting a common 90-day window rather
+than a common count leaves volume unbounded — roughly 11k AJIO reviews against
+~50k Myntra — which after segmentation exceeds a day of Gemini quota several
+times over. So the corpus is randomly downsampled to 6,000 utterances per
+(source, brand) cell.
+
+The sample must be **random, never the newest n**: taking the newest n would
+silently reintroduce the unequal windows B10 exists to remove. A uniform sample
+within a cell leaves each area's share unchanged in expectation and widens the
+Wilson interval to match the smaller n — losing precision, which is visible,
+rather than validity, which would not be.
 
 **S2** does three things it must not do differently: no translation (I7 —
 translating "lu ya nahi" into "should I buy it" produces a grammatical equivalent

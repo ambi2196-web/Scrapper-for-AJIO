@@ -8,6 +8,7 @@ new opportunity to break an invariant.
 from __future__ import annotations
 
 import abc
+import datetime as _dt
 import json
 import random
 import time
@@ -30,7 +31,7 @@ class Collector(abc.ABC):
 
     name: str = ""
 
-    def __init__(self, brand: str, cap: int | None = None) -> None:
+    def __init__(self, brand: str, cap: int | None = None, window_days: int | None = None) -> None:
         if not self.name:
             raise CollectorError("collector subclass must set `name`")
         self.brand = brand
@@ -39,9 +40,40 @@ class Collector(abc.ABC):
         self.cfg = cfg["sources"].get(self.name)
         if self.cfg is None:
             raise CollectorError(f"no config block for source {self.name!r} in sources.yaml")
-        # Equal caps across brands are load-bearing for the differential (04 §2.1).
+        # `cap` is a safety ceiling on scrape time, NOT the sampling rule. The
+        # sampling rule is the common window below - see sources.yaml for why
+        # equal counts is the wrong instrument for the spec's own goal.
         self.cap = cap if cap is not None else cfg["brand_cap_per_source"]
+        self.window_days = (
+            window_days if window_days is not None else cfg.get("collection_window_days")
+        )
         self._robots: dict[str, urllib.robotparser.RobotFileParser] = {}
+
+    @property
+    def window_start(self) -> _dt.datetime | None:
+        """Inclusive lower bound on posted_at. None means no window (collect all)."""
+        if not self.window_days:
+            return None
+        return _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=int(self.window_days))
+
+    def in_window(self, posted_at: Any) -> bool:
+        """True if this item falls inside the collection window.
+
+        An item with no date is KEPT: dropping undated items would bias the
+        corpus toward whichever source happens to expose timestamps, and the
+        posted_at null rate is separately reported at S2 and gates trend claims.
+        """
+        start = self.window_start
+        if start is None or posted_at is None:
+            return True
+        if isinstance(posted_at, str):
+            try:
+                posted_at = _dt.datetime.fromisoformat(posted_at.replace("Z", "+00:00"))
+            except ValueError:
+                return True
+        if posted_at.tzinfo is None:
+            posted_at = posted_at.replace(tzinfo=_dt.timezone.utc)
+        return posted_at >= start
 
     # -- politeness ---------------------------------------------------------
 
@@ -98,16 +130,34 @@ class Collector(abc.ABC):
 
     def run(self) -> dict[str, Any]:
         emitted = 0
+        newest: str | None = None
+        oldest: str | None = None
         with RawWriter(self.name, self.brand) as writer:
             for env in self.fetch():
                 writer.write(env)
                 emitted += 1
+                if env.posted_at:
+                    stamp = str(env.posted_at)
+                    if newest is None or stamp > newest:
+                        newest = stamp
+                    if oldest is None or stamp < oldest:
+                        oldest = stamp
                 if emitted >= self.cap:
-                    self.log_event("cap_reached", {"cap": self.cap})
+                    # A ceiling hit means the window was NOT fully collected, so
+                    # this brand's period is truncated relative to the others.
+                    # Loud, because it silently breaks window parity.
+                    self.log_event("safety_ceiling_hit", {
+                        "cap": self.cap,
+                        "warning": "window not fully collected; period parity is broken for this brand",
+                    })
                     break
             stats = writer.stats
         stats["emitted_from_source"] = emitted
-        stats["cap"] = self.cap
+        stats["safety_ceiling"] = self.cap
+        stats["window_days"] = self.window_days
+        stats["observed_newest"] = newest
+        stats["observed_oldest"] = oldest
+        stats["observed_span_days"] = _span_days(newest, oldest)
         # A wrong package id / app id fails SILENTLY by returning an empty list
         # rather than raising. This is the assert that turns that into a stop.
         if emitted == 0:
@@ -126,24 +176,48 @@ class _DenyAll:
         return False
 
 
-def check_equal_caps(stats_by_brand: dict[str, dict[str, Any]], tolerance: float) -> list[str]:
-    """Acceptance test T10: per-brand collected counts within tolerance of each other.
+def _span_days(newest: str | None, oldest: str | None) -> float | None:
+    if not newest or not oldest:
+        return None
+    try:
+        a = _dt.datetime.fromisoformat(str(newest).replace("Z", "+00:00"))
+        b = _dt.datetime.fromisoformat(str(oldest).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return round(abs((a - b).total_seconds()) / 86400.0, 2)
 
-    An unequal cap contaminates the differential because the two proportions
-    would be measured on differently-deep slices of the review timeline - the
-    older slice carries a different app version, a different pricing regime and
-    a different set of complaints.
+
+def check_window_parity(
+    stats_by_brand: dict[str, dict[str, Any]], tolerance_days: float
+) -> list[str]:
+    """T10, restated: per-brand observed PERIODS must agree, not per-brand counts.
+
+    This is the check that 04 §2.1 was reaching for. Equal counts across brands
+    with different review velocities produces unequal periods - measured at 40
+    days for AJIO, 7 for Myntra and 1,094 for Urbanic at the same 4,000-row cap -
+    which is exactly the contamination the original rule meant to prevent.
+
+    Unequal n across brands is fine and is NOT flagged here: a proportion's
+    denominator is its own n, and both the Wilson interval and the
+    two-proportion z-test handle unequal n natively.
     """
-    counts = {b: s.get("total_on_disk", 0) for b, s in stats_by_brand.items()}
-    if len(counts) < 2:
+    spans = {b: s.get("observed_span_days") for b, s in stats_by_brand.items()
+             if s.get("observed_span_days") is not None}
+    if len(spans) < 2:
         return []
-    lo, hi = min(counts.values()), max(counts.values())
-    if hi == 0:
-        return ["all brands collected zero rows"]
-    if (hi - lo) / hi > tolerance:
-        return [
-            f"per-brand counts differ by more than {tolerance:.0%}: {counts}. "
-            "Comparing proportions across unequal depths is not a defensible differential; "
-            "truncate the deeper brands to the shallowest count before S7."
-        ]
-    return []
+    lo, hi = min(spans.values()), max(spans.values())
+    problems: list[str] = []
+    if (hi - lo) > tolerance_days:
+        problems.append(
+            f"per-brand observed windows differ by {hi - lo:.1f} days "
+            f"(tolerance {tolerance_days}): {spans}. Proportions measured over "
+            "different periods are not comparable - the longer slice spans "
+            "different app versions, pricing regimes and seasons."
+        )
+    for brand, stats in stats_by_brand.items():
+        if stats.get("safety_ceiling_hit"):
+            problems.append(
+                f"{brand} hit the safety ceiling, so its window is truncated and "
+                "period parity is broken. Raise brand_cap_per_source or shorten the window."
+            )
+    return problems

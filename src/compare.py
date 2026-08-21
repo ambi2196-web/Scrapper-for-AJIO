@@ -55,6 +55,66 @@ def two_proportion(
     return {"z": round(float(z), 4), "p": round(float(p), 6)}
 
 
+def observed_windows(labelled: Any | None = None) -> dict[tuple[str, str], float]:
+    """Observed posted_at span in days, per (source, brand).
+
+    Computed from the data rather than read from a log, so it stays true after a
+    partial re-collection.
+    """
+    import pandas as pd
+
+    if labelled is None:
+        path = ROOT / "data" / "labelled" / "utterances.parquet"
+        if not path.exists():
+            return {}
+        labelled = pd.read_parquet(path)
+
+    if "posted_at" not in labelled.columns:
+        return {}
+    df = labelled.dropna(subset=["posted_at"]).copy()
+    if df.empty:
+        return {}
+    df["_ts"] = pd.to_datetime(df["posted_at"], errors="coerce", utc=True)
+    df = df.dropna(subset=["_ts"])
+    spans = df.groupby(["source", "brand"])["_ts"].agg(["min", "max"])
+    return {
+        (src, brand): round((row["max"] - row["min"]).total_seconds() / 86400.0, 2)
+        for (src, brand), row in spans.iterrows()
+    }
+
+
+def window_compliant_brands(
+    source: str, windows: dict[tuple[str, str], float], tolerance_days: float
+) -> tuple[set[str], dict[str, str]]:
+    """Brands on `source` whose observed period matches the focal brand's.
+
+    A brand whose window is materially shorter cannot enter a differential, and
+    the reason is structural rather than fixable: Apple caps public review
+    pagination at ~500 rows, so a high-velocity app like Myntra reaches back only
+    ~3 days on the App Store while AJIO reaches ~88. Pooling them would compare
+    three days of one brand against three months of another.
+
+    Excluded brands keep their utterances - they remain available for verbatims
+    and severity. They are only barred from the pooled proportion.
+    """
+    on_source = {b: d for (s, b), d in windows.items() if s == source}
+    focal = on_source.get(FOCAL_BRAND)
+    if focal is None:
+        return set(on_source), {}
+    compliant: set[str] = set()
+    excluded: dict[str, str] = {}
+    for brand, span in on_source.items():
+        if abs(span - focal) <= tolerance_days:
+            compliant.add(brand)
+        else:
+            excluded[brand] = (
+                f"observed window {span:.1f}d vs focal {focal:.1f}d "
+                f"(tolerance {tolerance_days}d) - excluded from the pool; "
+                "retained for verbatims and severity"
+            )
+    return compliant, excluded
+
+
 def run(aggregates: Any | None = None) -> Any:
     """AJIO vs pooled competitors, per (source, stance, opportunity_area)."""
     import pandas as pd
@@ -66,6 +126,18 @@ def run(aggregates: Any | None = None) -> Any:
         aggregates = pd.read_parquet(path)
 
     alpha = float(threshold("statistics.alpha"))
+    cfg = load_sources()
+    tolerance = float(cfg.get("window_parity_tolerance_days", 3))
+    windows = observed_windows()
+    compliance: dict[str, tuple[set[str], dict[str, str]]] = {}
+    for source in sorted({s for s, _ in windows}):
+        compliance[source] = window_compliant_brands(source, windows, tolerance)
+    for source, (_, excluded) in compliance.items():
+        if excluded:
+            _log({"at": now_ist(), "stage": "S8", "source": source,
+                  "excluded_from_pool": excluded,
+                  "reason": "window parity - see B10 in docs/decisions.md"})
+
     rows: list[dict[str, Any]] = []
 
     keys = ["source", "temporal_stance", "opportunity_area"]
@@ -74,6 +146,14 @@ def run(aggregates: Any | None = None) -> Any:
 
         focal = block[block["brand"] == FOCAL_BRAND]
         pool = block[block["brand"] != FOCAL_BRAND]     # AJIO excluded from its own pool
+
+        # Window parity: a brand whose observed period does not match the focal
+        # brand's cannot enter the pooled proportion (B10). Its rows stay in the
+        # corpus for verbatims; they just do not form a denominator here.
+        compliant, excluded_reasons = compliance.get(source, (None, {}))
+        if compliant is not None:
+            pool = pool[pool["brand"].isin(compliant - {FOCAL_BRAND})]
+
         if focal.empty or pool.empty:
             continue
 
@@ -99,6 +179,8 @@ def run(aggregates: Any | None = None) -> Any:
             "n_ajio": n_ajio, "x_ajio": x_ajio, "p_ajio": p_ajio,
             "n_pool": n_pool, "x_pool": x_pool, "p_pool": p_pool,
             "pool_brands": sorted(pool["brand"].unique().tolist()),
+            "pool_excluded_for_window": sorted(excluded_reasons) if excluded_reasons else [],
+            "focal_window_days": windows.get((source, FOCAL_BRAND)),
             "ratio": (round(p_ajio / p_pool, 4) if (gated is None and p_ajio and p_pool) else None),
             "difference": (round(p_ajio - p_pool, 4) if (gated is None and p_ajio is not None and p_pool is not None) else None),
             "z": test.get("z"),

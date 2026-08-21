@@ -489,28 +489,96 @@ def test_t9_config_marks_the_known_biased_sources():
 # T10 - equal caps
 # --------------------------------------------------------------------------
 
-def test_t10_equal_caps_within_tolerance():
-    from src.collect.base import check_equal_caps
+def test_t10_window_parity_across_brands():
+    """T10, restated: brands must cover the same PERIOD, not the same count.
+
+    Equal counts was the spec's rule and it is the wrong instrument: measured on
+    22 Aug 2026, a 4,000-row cap gave AJIO 40 days, Myntra 7 and Urbanic 1,094,
+    because review velocity differs ~100x. Unequal n is harmless; unequal
+    periods are not.
+    """
+    import datetime as _d
+
+    from src.collect.base import check_window_parity
     from src.envelope import read_raw
 
-    counts: dict[str, int] = {}
+    spans: dict[str, dict] = {}
     for row in read_raw("play"):
-        counts[row["brand"]] = counts.get(row["brand"], 0) + 1
-    if len(counts) < 2:
+        stamp = row.get("posted_at")
+        if not stamp:
+            continue
+        b = spans.setdefault(row["brand"], {"lo": stamp, "hi": stamp})
+        b["lo"] = min(b["lo"], stamp)
+        b["hi"] = max(b["hi"], stamp)
+    if len(spans) < 2:
         pytest.skip("fewer than two brands collected on Play")
 
-    tolerance = cfg.load_sources()["brand_cap_tolerance"]
-    warnings = check_equal_caps({b: {"total_on_disk": n} for b, n in counts.items()}, tolerance)
-    assert not warnings, warnings
+    def days(entry):
+        lo = _d.datetime.fromisoformat(entry["lo"].replace("Z", "+00:00"))
+        hi = _d.datetime.fromisoformat(entry["hi"].replace("Z", "+00:00"))
+        return round((hi - lo).total_seconds() / 86400.0, 2)
+
+    stats = {b: {"observed_span_days": days(e)} for b, e in spans.items()}
+    tolerance = cfg.load_sources().get("window_parity_tolerance_days", 3)
+    assert not check_window_parity(stats, tolerance), check_window_parity(stats, tolerance)
 
 
-def test_t10_check_equal_caps_detects_imbalance():
-    from src.collect.base import check_equal_caps
+def test_t10_check_window_parity_detects_mismatch():
+    from src.collect.base import check_window_parity
 
-    assert check_equal_caps({"ajio": {"total_on_disk": 4000},
-                             "myntra": {"total_on_disk": 1200}}, 0.10)
-    assert not check_equal_caps({"ajio": {"total_on_disk": 4000},
-                                 "myntra": {"total_on_disk": 3900}}, 0.10)
+    # The real measured numbers under the old equal-count rule.
+    assert check_window_parity({"ajio": {"observed_span_days": 40},
+                                "urbanic": {"observed_span_days": 1094}}, 3)
+    assert not check_window_parity({"ajio": {"observed_span_days": 89.4},
+                                    "myntra": {"observed_span_days": 90.0}}, 3)
+
+
+def test_t10_window_noncompliant_brand_is_barred_from_the_pool():
+    """Apple caps public pagination at ~500 rows, which is a structural limit.
+
+    Measured 22 Aug 2026: on the App Store, AJIO and Nykaa Fashion both reach
+    ~88 days, but Myntra's iOS velocity exhausts the 500-row ceiling in 3.2 days.
+    Pooling Myntra there would compare three days of one brand against three
+    months of another, so it is barred from the pool - while keeping its rows for
+    verbatims and severity.
+    """
+    from src.compare import window_compliant_brands
+
+    windows = {
+        ("appstore", "ajio"): 88.16,
+        ("appstore", "myntra"): 3.18,
+        ("appstore", "nykaa_fashion"): 88.22,
+        ("play", "ajio"): 89.10,
+        ("play", "myntra"): 89.40,
+        ("play", "urbanic"): 88.90,
+    }
+    compliant, excluded = window_compliant_brands("appstore", windows, 3.0)
+    assert compliant == {"ajio", "nykaa_fashion"}
+    assert "myntra" in excluded and "3.2d" in excluded["myntra"]
+
+    compliant, excluded = window_compliant_brands("play", windows, 3.0)
+    assert compliant == {"ajio", "myntra", "urbanic"}
+    assert not excluded
+
+
+def test_t10_no_focal_brand_means_no_exclusions():
+    """Without the focal brand there is nothing to measure parity against."""
+    from src.compare import window_compliant_brands
+
+    compliant, excluded = window_compliant_brands(
+        "play", {("play", "myntra"): 12.0, ("play", "urbanic"): 900.0}, 3.0
+    )
+    assert compliant == {"myntra", "urbanic"}
+    assert not excluded
+
+
+def test_t10_unequal_n_is_not_flagged():
+    """A proportion's denominator is its own n; Wilson and the z-test handle it."""
+    from src.collect.base import check_window_parity
+
+    assert not check_window_parity(
+        {"ajio": {"observed_span_days": 90.0}, "urbanic": {"observed_span_days": 89.5}}, 3
+    )
 
 
 # --------------------------------------------------------------------------

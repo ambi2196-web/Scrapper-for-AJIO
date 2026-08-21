@@ -195,6 +195,7 @@ with tab_pipeline:
 | **S2** normalise | Unicode, language, near-duplicate hash | no translation, no lowercasing of stored text |
 | **S3** segment | reviews → utterances | `raw_text[start:end]` reconstructs each utterance exactly |
 | **S4** filter | drop with a logged reason | the drop log is an appendix table |
+| **S4b** sample | random downsample within the window | random, never the newest n - that would undo the common window |
 | **S5** classify | Gemini bulk + Groq second annotator | evidence quote must be an exact substring, or the row is quarantined |
 | **S6** validate | κ per field, two comparisons | below the substantial band, numbers do not ship |
 | **S7** quantify | Wilson intervals, gated | denominators never mix source or stance |
