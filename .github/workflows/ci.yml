@@ -37,8 +37,11 @@ jobs:
             echo "::error::.env is tracked. This repo is public and is linked in the deck."
             exit 1
           fi
-          if git ls-files | grep -q '^data/raw/'; then
+          # .gitkeep is exempt: it carries no data and keeps the tree shape
+          # visible on a fresh clone.
+          if git ls-files 'data/raw' 'data/interim' 'data/labelled' | grep -v '\.gitkeep$' | grep -q .; then
             echo "::error::scraped corpus is committed to a public repo"
+            git ls-files 'data/raw' 'data/interim' 'data/labelled' | grep -v '\.gitkeep$'
             exit 1
           fi
           echo "clean"

@@ -395,8 +395,16 @@ def test_env_file_is_not_tracked():
     except Exception:
         pytest.skip("not a git checkout")
     assert ".env" not in tracked
-    assert not [f for f in tracked if f.startswith("data/raw/")], (
-        "raw scrape must not be committed to a public repo"
+    # .gitkeep is exempt - it carries no data and exists so the directory shape
+    # is visible on a fresh clone.
+    corpus = [
+        f for f in tracked
+        if f.startswith(("data/raw/", "data/interim/", "data/labelled/"))
+        and not f.endswith(".gitkeep")
+    ]
+    assert not corpus, f"scraped corpus must not be committed to a public repo: {corpus[:5]}"
+    assert "data/gold/human_labels.csv" not in tracked, (
+        "hand labels are working data, not a deliverable"
     )
 
 
