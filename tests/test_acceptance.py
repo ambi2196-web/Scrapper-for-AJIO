@@ -278,16 +278,26 @@ def test_addressability_is_a_binary_gate_with_a_reason():
         assert area["addressability_rationale"].strip()
 
 
-def test_opportunity_index_names_a_reference_source():
+def test_opportunity_index_reference_must_be_collectable():
     """03 §5.1 forbids mixing sources in a denominator, so the index is
-    undefined unless one source is named."""
-    oi = cfg.opportunity_index_config()
-    assert oi["reference_source"] == "pdp_qa", (
-        "PDP Q&A is the reference source because it is pre-purchase by "
-        "construction - the property the whole index depends on"
-    )
-    assert oi["reference_stance"] == "pre_purchase"
-    assert oi["reference_source"] in cfg.denominator_eligible_sources()
+    undefined unless one NAMED, ENABLED, denominator-eligible source anchors it.
+
+    The spec names AJIO PDP Q&A because it is pre-purchase by construction. That
+    surface turned out not to exist - AJIO publishes no PDP reviews or Q&A - so
+    this now raises until a replacement is designated. Raising is correct: a
+    disabled reference silently produces an index whose reference cell matches
+    no rows, which looks like a computed index and is not one.
+    """
+    sources = cfg.load_sources()["sources"]
+    try:
+        oi = cfg.opportunity_index_config()
+    except ConfigError as exc:
+        assert "DISABLED" in str(exc) or "not a source" in str(exc)
+        return
+    ref = oi["reference_source"]
+    assert sources[ref]["enabled"], f"reference source {ref} must be enabled"
+    assert sources[ref]["denominator_eligible"], f"reference source {ref} must carry a rate"
+    assert oi["reference_stance"] in {"pre_purchase", "at_purchase", "post_purchase"}
 
 
 # --------------------------------------------------------------------------

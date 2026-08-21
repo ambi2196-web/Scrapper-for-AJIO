@@ -172,6 +172,34 @@ def opportunity_index_config() -> dict[str, Any]:
                 f"taxonomy.yaml opportunity_index.{field} is unset. The index is "
                 "undefined without a named reference source (03 §5.2)."
             )
+
+    # The reference source must actually be collectable and able to carry a rate.
+    # Without this check a disabled source silently yields an index with no
+    # reference cell at all - present in the CSV, referring to nothing.
+    ref = cfg["reference_source"]
+    sources = load_sources()["sources"]
+    block = sources.get(ref)
+    if block is None:
+        raise ConfigError(
+            f"opportunity_index.reference_source={ref!r} is not a source in sources.yaml."
+        )
+    if not block.get("enabled"):
+        raise ConfigError(
+            f"opportunity_index.reference_source={ref!r} is DISABLED in sources.yaml.\n"
+            "  03 §5.2 names AJIO PDP Q&A as the reference because it is pre-purchase\n"
+            "  by construction. That surface does not exist: AJIO publishes no PDP\n"
+            "  reviews or Q&A (enableReview: OFF across sampled products), and the\n"
+            "  /api/ path any payload would use is robots-disallowed. See\n"
+            "  D3-OUTCOME in docs/decisions.md.\n"
+            "  The index cannot be computed until a replacement reference source is\n"
+            "  named. Whatever is chosen, stance is then INFERRED rather than\n"
+            "  guaranteed by the surface, and that weakening has to be disclosed."
+        )
+    if not block.get("denominator_eligible"):
+        raise ConfigError(
+            f"opportunity_index.reference_source={ref!r} is denominator_eligible: false. "
+            "A source that cannot carry a rate cannot anchor an index built on prevalence."
+        )
     return cfg
 
 

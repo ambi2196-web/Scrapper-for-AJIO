@@ -96,7 +96,7 @@ sources:
       nykaa_fashion: {app_name: "nykaa-fashion-shopping-app", app_id: 1439872423}
 
   pdp_qa:
-    enabled: true
+    enabled: false               # CUT 22 Aug 2026 - see D3-OUTCOME in docs/decisions.md
     denominator_eligible: true
     brand_established_by_surface: true
     structurally_matched_group: "pdp_qa"
@@ -138,7 +138,7 @@ sources:
     frame_log: "logs/pdp_sampling_frame.jsonl"
 
   pdp_reviews:
-    enabled: true
+    enabled: false               # CUT 22 Aug 2026 - see D3-OUTCOME in docs/decisions.md
     denominator_eligible: true
     brand_established_by_surface: true
     structurally_matched_group: "pdp_review"

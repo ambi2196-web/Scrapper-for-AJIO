@@ -66,6 +66,46 @@ the differential while Reddit and YouTube still carry mechanism.
 
 ---
 
+### D3-OUTCOME · PDP Q&A and reviews CUT — the source does not exist
+**Determined:** 22 Aug 2026 · **Triggered by the D3 pre-commitment**
+
+PDP Q&A was the priority source and the designated reference source for the
+opportunity index. It is not collectable, for two independent reasons — either
+alone is sufficient.
+
+**1 · There is nothing there.** Eight randomly sampled AJIO PDPs, drawn from the
+sitemap, all return `enableReview: OFF` and `showReviewProdBtn: OFF` in the
+preloaded state, `ratings.avgRating` empty, and zero occurrences of
+`aggregateRating` anywhere in the served HTML. **AJIO does not currently expose
+customer reviews or Q&A on its product pages.** This is not a scraping
+difficulty; the surface does not exist.
+
+**2 · The path it would come from is disallowed.** `robots.txt` (fetched 22 Aug
+2026) allows `/p/` product pages but disallows `/api/` and `/api/*`. Any review
+payload on a client-rendered PDP arrives over `/api/`. The Playwright fallback
+in 04 §2.3 does not rescue this: rendering the page still causes our agent to
+fetch the disallowed `/api/` paths, so it routes around robots.txt rather than
+honouring it. That is precisely the workaround D3 pre-committed to refusing.
+
+**This is a finding, not a failure**, and it belongs on the blind-spot register:
+the single richest hypothesised source of pre-purchase hesitation for this
+retailer is one the retailer does not publish. An evaluator asking "why no PDP
+Q&A?" gets a checked, dated answer rather than a shrug.
+
+**Consequence — the opportunity index loses its reference source.** 03 §5.2
+names AJIO PDP Q&A specifically, because it is pre-purchase *by construction*
+rather than by classification, and §5.1 forbids mixing sources in a denominator.
+With PDP gone, **no pre-purchase-by-construction surface remains**: every
+surviving source is retrospective, so `temporal_stance` must be inferred from
+wording everywhere. The reference source must be re-designated and the weakening
+disclosed. See the open question below.
+
+**Sitemap note:** the product sitemaps ARE allowed and advertised in robots.txt
+(76 files, ~40,000 URLs each, all on `/p/`). They remain a valid sampling frame
+if any AJIO product-level surface becomes collectable later.
+
+---
+
 ### D4 · Comparison set
 **Settled:** 22 Aug 2026 · **Decision:** per-surface, because the brands are not
 available on both.
