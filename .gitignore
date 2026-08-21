@@ -11,7 +11,10 @@
 data/raw/*
 data/interim/*
 data/labelled/*
-data/gold/human_labels.csv
+# All hand-labelling working files. The template carries 100 rows of
+# scraped review text, which is working data rather than a deliverable -
+# only data/out/ and the dashboard snapshot ship (see B5).
+data/gold/*.csv
 logs/deferred/
 logs/*.jsonl
 
