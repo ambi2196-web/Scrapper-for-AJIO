@@ -127,6 +127,8 @@ def cmd_classify(args: argparse.Namespace) -> None:
         _print(classify.consolidate())
     elif args.lane == "sweep-b":
         _print(classify.sweep_batch_size())
+    elif args.lane == "sweep-b-agreement":
+        _print(classify.sweep_batch_size_by_agreement(n=args.limit or 100))
 
 
 def cmd_quota(_: argparse.Namespace) -> None:
@@ -240,7 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
         func=cmd_freeze_proximity)
 
     cl = sub.add_parser("classify", help="S5")
-    cl.add_argument("lane", choices=["a", "b", "c", "consolidate", "sweep-b"])
+    cl.add_argument("lane", choices=["a", "b", "c", "consolidate", "sweep-b", "sweep-b-agreement"])
     cl.add_argument("--limit", type=int)
     cl.set_defaults(func=cmd_classify)
 

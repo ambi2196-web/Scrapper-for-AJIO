@@ -18,6 +18,18 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CONFIG_DIR = ROOT / "config"
 
+# Load .env once, at import. Without this `api_key()` reads a bare os.environ
+# and never sees the file the README tells you to create - the keys are present
+# on disk and absent to the process, which fails as "GEMINI_API_KEY is not set"
+# and sends you looking in the wrong place.
+# override=False so a real environment variable still wins over the file.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / ".env", override=False)
+except ImportError:  # python-dotenv is optional; env vars still work without it
+    pass
+
 
 class ConfigError(RuntimeError):
     """Raised when a config file violates an invariant. Never caught in-pipeline."""

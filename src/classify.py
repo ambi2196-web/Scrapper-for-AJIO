@@ -393,6 +393,147 @@ def consolidate() -> dict[str, Any]:
 # B sweep (derives thresholds.classification.batch_size_B)
 # --------------------------------------------------------------------------
 
+def sweep_batch_size_by_agreement(n: int = 100, seed: int = 20260822) -> dict[str, Any]:
+    """Derive B without a gold set, by measuring label STABILITY across batch size.
+
+    The spec derives B from accuracy against 100 hand-labelled utterances
+    (04 §4.3). That is the better measurement and remains owed. This is the
+    fallback for when gold labels are not yet available, and it measures the
+    specific thing large B threatens rather than accuracy in general.
+
+    The risk from a large batch is attention dilution: the model loses track of
+    individual items, which shows up as labels that move when the same utterance
+    is graded in a bigger batch, as omitted items, and as ids that drift out of
+    alignment. B=5 is the reference because a small batch is where per-item
+    attention is highest.
+
+    So: label the same utterances at every B in the grid, and measure agreement
+    with the B=5 labels. If labels are stable across B, accuracy is stable too -
+    a model that returns the same answer in a batch of 40 as in a batch of 5 has
+    not been diluted by the batch. If they move, the larger B is degrading the
+    task regardless of which answer was right.
+
+    This CANNOT detect a model that is consistently wrong in the same way at
+    every B. Only gold labels can. That is why it is a fallback and why the
+    threshold records which derivation produced it.
+    """
+    import random as _random
+
+    from statsmodels.stats.proportion import proportions_ztest
+
+    grid = threshold("classification.batch_size_B_sweep_grid")
+    alpha = float(threshold("statistics.alpha"))
+    template = _load_template("classify_v1.txt")
+
+    rows = list(read_filtered())
+    if not rows:
+        raise RuntimeError("no sampled utterances - run S4b first")
+    rng = _random.Random(seed)
+    subset = rng.sample(sorted(rows, key=lambda r: r["utterance_id"]), min(n, len(rows)))
+
+    router = Router()
+    invoker = gemini.make_invoker(response_json_schema())
+
+    def label_at(b: int) -> dict[str, dict[str, Any]]:
+        out: dict[str, dict[str, Any]] = {}
+        for batch in _batches(subset, b):
+            prompt = build_prompt(template, batch)
+            text = router.call("A", prompt, invoke=invoker)
+            if text is None:
+                continue
+            try:
+                items = _parse_response(text)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            for item in items:
+                uid = item.get("utterance_id")
+                if uid:
+                    out[uid] = item
+        return out
+
+    # The reference is run TWICE. Comparing the smallest B against itself is
+    # 100% by construction, which is an artefact rather than a measurement and
+    # makes every larger B look degraded against a ceiling nothing can reach.
+    #
+    # run1-vs-run2 at the smallest B is the model's own NONDETERMINISM FLOOR:
+    # temperature=0 constrains sampling but does not make a large model bit-exact,
+    # so some disagreement exists even with the batch size held fixed. A larger B
+    # is only degrading the task if it disagrees MORE than that floor.
+    reference_b = min(grid)
+    reference = label_at(reference_b)
+    reference_repeat = label_at(reference_b)
+
+    floor_shared = set(reference) & set(reference_repeat)
+    floor_agree = sum(
+        1 for u in floor_shared
+        if reference_repeat[u].get("opportunity_area") == reference[u].get("opportunity_area")
+    )
+    floor = {
+        "B": reference_b, "comparable": len(floor_shared),
+        "agree_opportunity_area": floor_agree,
+        "stability_area": round(floor_agree / len(floor_shared), 4) if floor_shared else None,
+        "note": "self-agreement at the smallest batch size; the noise floor, not a ceiling",
+    }
+
+    results = []
+    for b in grid:
+        labels = reference_repeat if b == reference_b else label_at(b)
+        shared = set(reference) & set(labels)
+        agree_area = sum(
+            1 for u in shared
+            if labels[u].get("opportunity_area") == reference[u].get("opportunity_area")
+        )
+        agree_stance = sum(
+            1 for u in shared
+            if labels[u].get("temporal_stance") == reference[u].get("temporal_stance")
+        )
+        results.append({
+            "B": b,
+            "returned": len(labels),
+            "omitted": len(subset) - len(labels),
+            "comparable": len(shared),
+            "agree_opportunity_area": agree_area,
+            "agree_temporal_stance": agree_stance,
+            "stability_area": round(agree_area / len(shared), 4) if shared else None,
+            "stability_stance": round(agree_stance / len(shared), 4) if shared else None,
+        })
+
+    # Every B, including the smallest, is tested against the nondeterminism floor.
+    for r in results:
+        if r["comparable"] and floor["comparable"]:
+            _, p = proportions_ztest(
+                [r["agree_opportunity_area"], floor["agree_opportunity_area"]],
+                [r["comparable"], floor["comparable"]],
+            )
+            r["p_vs_floor"] = round(float(p), 4)
+            r["indistinguishable"] = bool(p > alpha)
+
+    # The rule: largest B that is statistically indistinguishable from the
+    # reference AND omitted nothing. Omission is disqualifying on its own - a
+    # batch size that silently drops utterances loses them from the denominator.
+    eligible = [r["B"] for r in results if r["omitted"] == 0 and r.get("indistinguishable")]
+    chosen = max(eligible) if eligible else reference_b
+
+    report = {
+        "at": now_ist(), "stage": "S5-sweep", "method": "agreement_with_smallest_B",
+        "reference_B": reference_b, "n": len(subset), "grid": grid,
+        "nondeterminism_floor": floor,
+        "results": results, "chosen_B": chosen,
+        "rule": (
+            "largest B whose disagreement with the reference is statistically "
+            "indistinguishable from the model's own run-to-run floor, with zero omissions"
+        ),
+        "limitation": (
+            "Measures stability, not accuracy. A model consistently wrong the same "
+            "way at every B would pass. The gold-based accuracy sweep (04 §4.3) is "
+            "still owed and takes precedence when hand labels exist."
+        ),
+    }
+    with (LOGS / "b_sweep.jsonl").open("a", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(report, ensure_ascii=False) + "\n")
+    return report
+
+
 def sweep_batch_size(gold_path: pathlib.Path | None = None) -> dict[str, Any]:
     """Sweep B against a fixed gold subset; report accuracy per B.
 

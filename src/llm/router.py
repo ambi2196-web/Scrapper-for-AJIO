@@ -52,19 +52,44 @@ class Limits:
     tpd: int | None = None
 
 
-# Verified against provider docs on 21 Aug 2026 (04 §4.1). Re-check on run day.
+# Re-verified against the live API on 22 Aug 2026, as 04 §4.1 instructs.
+#
+# TWO THINGS CHANGED since the spec was written, both caught by a smoke test
+# rather than by the bulk run failing halfway:
+#
+# 1. The models are gone. Both `gemini-2.5-flash-lite` and `gemini-2.5-flash`
+#    return 404 "no longer available to new users". They still appear in
+#    models.list(), so listing them is not proof they can be called - only a
+#    real call is. Lanes A and B move to the 3.5 generation, which keeps the
+#    escalation meaningful: lane B is a more capable model in the SAME family,
+#    which is what the spec intends by escalation.
+#
+# 2. Google no longer publishes per-model free-tier limits. The rate-limits doc
+#    now says limits "can be viewed in Google AI Studio" and gives no table, so
+#    there is no citable figure to encode. The values below are therefore
+#    deliberately CONSERVATIVE rather than authoritative: they under-claim, and
+#    the router's 429 handling with Retry-After is the real enforcement. Under-
+#    claiming costs throughput; over-claiming would burn the daily quota by
+#    mid-afternoon, which is the expensive direction of the error.
+#
+# Groq's limits ARE authoritative - read from x-ratelimit-* response headers on
+# 22 Aug 2026: 1,000 requests/day, 8,000 tokens/minute. Both match the spec.
+#
+# Models are PINNED, not aliased. `gemini-flash-latest` also works but could
+# shift under a running job, and a classifier whose model changes mid-corpus has
+# no single classifier_version and no defensible count.
 LANES: dict[str, dict[str, Any]] = {
     "A": {
         "provider": "gemini",
-        "model": "gemini-2.5-flash-lite",
+        "model": "gemini-3.5-flash-lite",
         "role": "bulk classification (S5 pass 1, full corpus)",
-        "limits": Limits(rpm=30, rpd=1500, tpm=1_000_000),
+        "limits": Limits(rpm=15, rpd=1000, tpm=250_000),
     },
     "B": {
         "provider": "gemini",
-        "model": "gemini-2.5-flash",
+        "model": "gemini-3.5-flash",
         "role": "escalation for confidence < tau, single-utterance calls",
-        "limits": Limits(rpm=15, rpd=1500, tpm=1_000_000),
+        "limits": Limits(rpm=10, rpd=250, tpm=250_000),
     },
     "C": {
         "provider": "groq",

@@ -139,6 +139,34 @@ outcome rather than a hidden one.
 App Store via the iTunes lookup API. AJIO `com.ril.ajio` / `1113425372`,
 Myntra `com.myntra.android` / `907394059`, Nykaa Fashion `1439872423`.
 
+**AMENDED 22 Aug 2026 — Urbanic is empty; Meesho declined; the Play pool is
+Myntra alone.**
+
+Urbanic returned **8 English reviews in the 90-day window**, spanning 54 days.
+The earlier ~330 estimate extrapolated from its 3-year average and was wrong:
+Urbanic's volume was front-loaded and its review flow has since collapsed (5 in
+August, 1 in July, 2 in June). Play's ordering was verified strictly
+newest-first, so this is the app, not the collector.
+
+At n=8 the Wilson interval spans most of [0,1]. The window-parity gate excludes
+it from the pool automatically (54d vs 89d), and it is retained only for
+verbatims and severity.
+
+Meesho was offered as a replacement and **declined**. So on Play the "pooled
+competitor proportion" is a single brand, Myntra. That is a real weakening of
+03 §5.3, which calls the differential the engine's most credible output, and it
+must be stated rather than implied: the Play comparison is AJIO vs Myntra, not
+AJIO vs a category.
+
+The App Store still carries two comparators — but only Nykaa Fashion is
+window-compliant there, since Apple's ~500-row pagination ceiling means Myntra's
+iOS feed reaches back just 3.2 days against AJIO's 88.2.
+
+Net: **AJIO vs Myntra on Play, AJIO vs Nykaa Fashion on the App Store.** Two
+single-comparator differentials on structurally different surfaces. Where they
+agree, that agreement is worth more than either alone; where they disagree, the
+disagreement is a finding about the surfaces.
+
 ---
 
 ### D5 · `wishlist_proximity` values
