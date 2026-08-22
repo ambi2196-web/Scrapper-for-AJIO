@@ -235,6 +235,47 @@ Neither source was denominator-eligible, so no prevalence figure changes.
 
 ---
 
+### D7 · App-store surfaces imply post_purchase
+**Settled:** 23 Aug 2026
+
+On a surface where the speaker has demonstrably transacted - an app-store
+review can only be written by someone who installed and used the app - an
+utterance that does not state its own stance is read as `post_purchase` rather
+than left `unclear`.
+
+**Why it was needed.** The S6 gate failed on `temporal_stance` at kappa 0.157.
+The confusion matrix showed the entire disagreement sitting in one cell: 24 of
+69 rows where the human said `post_purchase` and the model said `unclear`.
+Agreement on `pre_purchase` was 3/3. The human read the surface; the prompt
+tells the model to read only the text and never to guess. Both defensible,
+mutually incompatible, and no amount of prompt tuning settles a definitional
+disagreement - so it is settled as a stated convention.
+
+**Effect:** kappa on `temporal_stance` moved 0.157 -> **0.851**, "almost
+perfect", 98.6% observed agreement. That the fix was this clean is itself
+evidence the diagnosis was right: a genuinely miscalibrated classifier does not
+recover from a definitional change.
+
+**What it does NOT do.** It never overrides an explicit label. `pre_purchase`
+and `at_purchase` pass through untouched - which matters, because the 453
+pre-purchase utterances are the entire basis of the opportunity index and are
+exactly what a blanket surface rule would have destroyed. Only `unclear` moves.
+
+**What it costs.** It asserts something the text does not say for 41% of the
+corpus (3,672 of 8,946 rows; 2,843 Play, 829 App Store). That is a real
+modelling assumption, and it is why the raw label is kept beside the resolved
+one: `temporal_stance` is what the classifier said,
+`temporal_stance_resolved` is what the engine reports. Any figure can be
+recomputed without the convention. A convention you can switch off is a
+convention you can defend.
+
+**Enforced by:** `src/stance.py`, applied at S5 consolidate as a separate
+column; S6 compares against the resolved value and S7 aggregates on it.
+`surface_implies_post_purchase` is declared per source in `sources.yaml`, true
+only for `play` and `appstore`.
+
+---
+
 ### B1 · LLM routing decided from token arithmetic, not vendor speed claims
 **Settled:** 21 Aug 2026
 

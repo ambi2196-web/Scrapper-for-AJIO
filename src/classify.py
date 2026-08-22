@@ -393,6 +393,10 @@ def consolidate() -> dict[str, Any]:
         merged = merged.join(c_cols, how="left")
 
     merged = merged.reset_index()
+    # D7: surface-based stance resolution, added as a SEPARATE column so the raw
+    # classifier label stays auditable and any figure can be recomputed without it.
+    from src.stance import add_resolved_column
+    merged = add_resolved_column(merged)
     out = LABELLED / "utterances.parquet"
     merged.to_parquet(out, index=False)
     return {

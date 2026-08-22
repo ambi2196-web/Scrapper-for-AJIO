@@ -92,6 +92,11 @@ def aggregate(group_keys: list[str] | None = None) -> Any:
     oi_cfg = opportunity_index_config()
 
     df = _load()
+    # D7: aggregate on the resolved stance. The raw column is retained in the
+    # parquet, so the whole table can be recomputed without the convention.
+    if "temporal_stance_resolved" in df.columns:
+        df = df.copy()
+        df["temporal_stance"] = df["temporal_stance_resolved"]
 
     ineligible_present = sorted(set(df["source"]) - eligible)
     if ineligible_present:

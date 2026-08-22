@@ -51,6 +51,8 @@ sources:
     enabled: true
     denominator_eligible: true
     brand_established_by_surface: true   # every review under com.ril.ajio is about AJIO
+    surface_implies_post_purchase: true
+    surface_implies_post_purchase: true
     structurally_matched_group: "app_store_review"
     langs: ["en", "hi"]
     country: "in"
@@ -80,6 +82,8 @@ sources:
   appstore:
     enabled: true
     denominator_eligible: true
+    surface_implies_post_purchase: true
+    surface_implies_post_purchase: true
     # Apple's public review pagination is shallow. This bounds the pull; the
     # 90-day window is applied as a post-filter because Apple does not return
     # strict newest-first, so there is no reliable boundary to stop at.

@@ -494,6 +494,11 @@ def human_vs_model() -> dict[str, Any]:
     df = _load_labels().set_index("utterance_id")
 
     joined = gold.join(df, on="utterance_id", rsuffix="_model")
+    # Compare against the RESOLVED stance (D7). The human labelled by surface
+    # convention, so comparing against the raw `unclear` would measure the
+    # convention rather than the classifier.
+    if "temporal_stance_resolved" in joined.columns:
+        joined["temporal_stance_model"] = joined["temporal_stance_resolved"]
     weights = joined["sampling_weight"].fillna(1.0).tolist() if "sampling_weight" in joined else None
 
     result = {"at": now_ist(), "comparison": "human vs lane_A", "n": int(len(joined)),
@@ -549,6 +554,11 @@ def sweep_tau() -> dict[str, Any]:
     gold = pd.read_csv(gold_path)
     df = _load_labels().set_index("utterance_id")
     joined = gold.join(df, on="utterance_id", rsuffix="_model")
+    # Compare against the RESOLVED stance (D7). The human labelled by surface
+    # convention, so comparing against the raw `unclear` would measure the
+    # convention rather than the classifier.
+    if "temporal_stance_resolved" in joined.columns:
+        joined["temporal_stance_model"] = joined["temporal_stance_resolved"]
 
     joined["correct"] = joined["opportunity_area"] == joined.get(
         "opportunity_area_model", joined["opportunity_area"]
