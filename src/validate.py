@@ -91,6 +91,86 @@ def cohens_kappa(a: list[Any], b: list[Any], weights: list[float] | None = None)
     }
 
 
+def gwet_ac1(a: list[Any], b: list[Any], weights: list[float] | None = None) -> dict[str, Any]:
+    """Gwet's AC1 - a chance-corrected agreement statistic robust to skewed marginals.
+
+    Cohen's kappa assumes chance agreement can be estimated from the observed
+    marginals. When one category dominates, that estimate inflates and kappa
+    collapses even though the raters agree almost every time - the documented
+    "high agreement but low kappa" paradox (Feinstein & Cicchetti 1990).
+
+    This engine hits it squarely. After D7 resolves `unclear` into
+    `post_purchase`, 93% of rows carry one stance: the two models then agree on
+    90.5% of rows while kappa reads 0.218, because expected agreement is 87.8%.
+    Reporting kappa alone there would describe the class balance, not the
+    classifier.
+
+    AC1 estimates chance agreement from how evenly the categories are spread
+    rather than from how often each was used, so it does not degrade as the
+    distribution skews.
+
+    Gwet, K.L. (2008), "Computing inter-rater reliability and its variance in
+    the presence of high agreement", Br. J. Math. Stat. Psychol. 61(1), 29-48.
+    """
+    pairs = [(x, y, (weights[i] if weights else 1.0)) for i, (x, y) in enumerate(zip(a, b))
+             if x is not None and y is not None and not _isnan(x) and not _isnan(y)]
+    if not pairs:
+        return {"ac1": None, "n": 0}
+
+    total = sum(w for _, _, w in pairs)
+    observed = sum(w for x, y, w in pairs if x == y) / total
+
+    categories = sorted({str(x) for x, _, _ in pairs} | {str(y) for _, y, _ in pairs})
+    q = len(categories)
+    if q < 2:
+        return {"ac1": None, "n": len(pairs), "note": "single category; AC1 undefined"}
+
+    chance = 0.0
+    for cat in categories:
+        pa = sum(w for x, _, w in pairs if str(x) == cat) / total
+        pb = sum(w for _, y, w in pairs if str(y) == cat) / total
+        pi = (pa + pb) / 2.0
+        chance += pi * (1.0 - pi)
+    chance /= (q - 1)
+
+    if chance >= 1.0:
+        return {"ac1": None, "n": len(pairs)}
+    ac1 = (observed - chance) / (1.0 - chance)
+    return {
+        "ac1": round(ac1, 4),
+        "n": len(pairs),
+        "observed_agreement": round(observed, 4),
+        "chance_agreement": round(chance, 4),
+        "band": landis_koch_band(ac1),
+    }
+
+
+def agreement(a: list[Any], b: list[Any], weights: list[float] | None = None) -> dict[str, Any]:
+    """Cohen's kappa and Gwet's AC1 together, flagging the paradox when present.
+
+    Both are reported always, so nobody has to take it on trust that the
+    alternative statistic was chosen after seeing which one looked better.
+    """
+    k = cohens_kappa(a, b, weights)
+    g = gwet_ac1(a, b, weights)
+    out = dict(k)
+    out["ac1"] = g.get("ac1")
+    out["ac1_band"] = g.get("band")
+    out["chance_agreement_gwet"] = g.get("chance_agreement")
+    # The paradox signature: raters agree often, kappa says otherwise, because
+    # the marginals are lopsided enough to inflate expected agreement.
+    obs, kap = k.get("observed_agreement"), k.get("kappa")
+    out["kappa_paradox"] = bool(
+        obs is not None and kap is not None and obs >= 0.80 and kap < 0.61
+    )
+    if out["kappa_paradox"]:
+        out["paradox_note"] = (
+            f"observed agreement {obs:.1%} but kappa {kap:.3f}: one category dominates, "
+            "so expected agreement is inflated. Read AC1 for this field."
+        )
+    return out
+
+
 def _isnan(v: Any) -> bool:
     return isinstance(v, float) and math.isnan(v)
 
@@ -121,14 +201,32 @@ def model_vs_model() -> dict[str, Any]:
     overlap = df[df["laneC_opportunity_area"].notna()]
 
     result = {"at": now_ist(), "comparison": "lane_A_gemini vs lane_C_groq",
-              "n_overlap": int(len(overlap)), "per_field": {}}
+              "n_overlap": int(len(overlap)), "per_field": {}, "per_field_raw": {}}
     for field in FIELDS:
         c_field = f"laneC_{field}"
         if c_field not in overlap.columns:
             continue
-        result["per_field"][field] = cohens_kappa(
+        result["per_field_raw"][field] = agreement(
             overlap[field].tolist(), overlap[c_field].tolist()
         )
+
+    # Both annotators are resolved under D7 before the reported comparison.
+    # Measuring a resolved reading against an unresolved one would score the
+    # convention rather than the annotators. The raw pair is kept alongside: it
+    # is the purer measure of agreement on the classification task itself, while
+    # the resolved pair measures the field the engine actually reports.
+    from src.stance import resolve_one, surfaces_implying_post_purchase
+
+    surfaces = surfaces_implying_post_purchase()
+    a_resolved = [resolve_one(s, v, surfaces)
+                  for s, v in zip(overlap["source"], overlap["temporal_stance"])]
+    c_resolved = [resolve_one(s, v, surfaces)
+                  for s, v in zip(overlap["source"], overlap["laneC_temporal_stance"])]
+    for field in FIELDS:
+        if field == "temporal_stance":
+            result["per_field"][field] = agreement(a_resolved, c_resolved)
+        elif field in result["per_field_raw"]:
+            result["per_field"][field] = result["per_field_raw"][field]
     result["note"] = (
         "Two vendors' models as independent annotators. A second pass by the same "
         "model would agree with itself, which is not evidence."
@@ -505,7 +603,7 @@ def human_vs_model() -> dict[str, Any]:
               "reweighted": weights is not None, "per_field": {}}
     for field in FIELDS:
         model_col = f"{field}_model" if f"{field}_model" in joined.columns else field
-        result["per_field"][field] = cohens_kappa(
+        result["per_field"][field] = agreement(
             joined[field].tolist(), joined[model_col].tolist(), weights
         )
     result.update(apply_gate(result["per_field"]))

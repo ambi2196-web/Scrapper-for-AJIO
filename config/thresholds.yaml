@@ -66,6 +66,24 @@ classification:
 
 validation:
 
+  agreement_statistic:
+    value: "kappa_with_ac1"
+    source: "cited:Feinstein & Cicchetti (1990) Journal of Clinical Epidemiology 43(6):543-549; Gwet (2008) Br. J. Math. Stat. Psychol. 61(1):29-48"
+    note: >
+      Cohen's kappa estimates chance agreement from the observed marginals, so
+      when one category dominates the estimate inflates and kappa collapses even
+      though raters agree almost every time - the documented "high agreement but
+      low kappa" paradox.
+
+      This corpus hits it squarely. After D7 resolves `unclear` into
+      `post_purchase`, 93% of rows carry one stance: the two models then agree on
+      90.5% of rows while kappa reads 0.218, because expected agreement is 87.8%.
+      Reporting kappa alone there describes the class balance, not the classifier.
+
+      BOTH statistics are therefore reported for every field, always - not
+      substituted when one looks better - and a field is flagged `kappa_paradox`
+      when observed agreement is at least 80% while kappa sits below the floor.
+
   kappa_acceptance_floor:
     value: 0.61
     source: "cited:Landis & Koch (1977) Biometrics 33(1):159-174 — lower bound of the 'substantial agreement' band (0.61-0.80)"
