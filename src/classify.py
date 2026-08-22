@@ -248,11 +248,16 @@ def run_lane_a(limit: int | None = None) -> dict[str, Any]:
             quarantined += q
     except QuotaExhausted as exc:
         # Not a failure. Stop cleanly, report where the run got to, resume tomorrow.
+        still_pending = len([r for r in read_filtered() if r["utterance_id"] not in completed_ids("A")])
         return {"stage": "S5", "lane": "A", "written": written, "quarantined": quarantined,
-                "already_done": len(done), "remaining": len(pending) - written - quarantined,
+                "already_done": len(done), "remaining": still_pending, "complete": False,
                 "stopped_by": str(exc)}
+    # `remaining` is recomputed from disk, not inferred from counters: a batch
+    # that was deferred rather than written must show up as outstanding.
+    still_pending = len([r for r in read_filtered() if r["utterance_id"] not in completed_ids("A")])
     return {"stage": "S5", "lane": "A", "written": written, "quarantined": quarantined,
-            "already_done": len(done), "remaining": 0}
+            "already_done": len(done), "remaining": still_pending,
+            "complete": still_pending == 0}
 
 
 def run_lane_b() -> dict[str, Any]:
@@ -373,7 +378,13 @@ def consolidate() -> dict[str, Any]:
     if not b.empty:
         merged.update(b.set_index("utterance_id"))
         merged.loc[b["utterance_id"], "escalated"] = True
-    merged["escalated"] = merged.get("escalated", False).fillna(False)
+    # DataFrame.get returns a bare False, not a Series, when the column is
+    # absent - which it is until lane B has run at least once. Build the column
+    # explicitly rather than relying on a default that changes type.
+    if "escalated" in merged.columns:
+        merged["escalated"] = merged["escalated"].fillna(False).astype(bool)
+    else:
+        merged["escalated"] = False
 
     if not c.empty:
         c_cols = c.set_index("utterance_id")[

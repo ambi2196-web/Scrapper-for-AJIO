@@ -330,6 +330,14 @@ class Router:
             started = time.monotonic()
             try:
                 text, ptok, ctok = invoke(model, prompt)
+            except QuotaExhausted:
+                # Must PROPAGATE, not be deferred. Caught by the generic handler
+                # below it becomes "all attempts failed", the batch is parked,
+                # the loop continues, and the stage returns a clean report with
+                # written=0 and remaining=0 - a quota-exhausted run that looks
+                # like a completed one. That is the most dangerous shape a
+                # failure can take, because nothing downstream flags it.
+                raise
             except Exception as exc:  # provider modules raise RetryableError for 429/5xx
                 last_error = f"{type(exc).__name__}: {exc}"
                 latency = time.monotonic() - started

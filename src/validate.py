@@ -338,6 +338,19 @@ def check_gold(path: Any = None) -> dict[str, Any]:
     tax = load_taxonomy()
     valid_area = {a["code"] for a in tax["opportunity_areas"]} | {"none"}
     valid_stance = {t["code"] for t in tax["temporal_stance"]}
+    # Excel writes an integer column containing blanks as floats, so a hand
+    # 2 arrives as "2.0". Normalising is not a fudge - the value is unambiguous,
+    # and rejecting it would send the labeller hunting a problem that is a
+    # spreadsheet artefact rather than a labelling error.
+    def _norm_sev(v: Any) -> str:
+        t = str(v).strip()
+        if t in ("", "nan", "None"):
+            return ""
+        try:
+            return str(int(float(t)))
+        except ValueError:
+            return t
+
     valid_sev = {str(s["level"]) for s in tax["severity"]} | {""}
     valid_bool = {"true", "false", "1", "0", "yes", "no", ""}
 
@@ -354,7 +367,10 @@ def check_gold(path: Any = None) -> dict[str, Any]:
 
     bad_area = offenders("opportunity_area", valid_area)
     bad_stance = offenders("temporal_stance", valid_stance)
-    bad_sev = offenders("severity", valid_sev)
+    bad_sev = (
+        sorted({_norm_sev(v) for v in df["severity"].dropna()} - valid_sev)
+        if "severity" in df.columns else []
+    )
     bad_hes = {str(v).strip().lower() for v in df.get("hesitation_marker", pd.Series(dtype=str)).dropna()} - valid_bool
 
     if bad_area:
@@ -373,6 +389,25 @@ def check_gold(path: Any = None) -> dict[str, Any]:
         problems.append(f"severity must be 1, 2 or 3 - got {bad_sev[:8]}")
     if bad_hes:
         problems.append(f"hesitation_marker must be boolean-ish - got {sorted(bad_hes)[:8]}")
+
+    # Severity must be present exactly when an area is claimed. A severity on a
+    # `none` row grades a friction that was not identified; a missing one on a
+    # real area silently drops that row from the severity kappa.
+    if {"opportunity_area", "severity"} <= set(df.columns):
+        sev_norm = df["severity"].map(_norm_sev)
+        area = df["opportunity_area"].astype(str).str.strip()
+        missing_sev = int(((area != "none") & (sev_norm == "")).sum())
+        stray_sev = int(((area == "none") & (sev_norm != "")).sum())
+        if missing_sev:
+            problems.append(
+                f"{missing_sev} row(s) claim an opportunity_area but leave severity blank - "
+                "those rows drop out of the severity kappa"
+            )
+        if stray_sev:
+            problems.append(
+                f"{stray_sev} row(s) are opportunity_area=none but carry a severity - "
+                "severity grades a friction, and none means none was identified"
+            )
 
     # Zero variance in a field makes it useless for kappa: a constant column
     # agrees with everything by chance, so the statistic is undefined.
