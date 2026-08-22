@@ -258,6 +258,8 @@ def _write_codebook(tax: dict[str, Any]) -> None:
         "",
         "Validate before use:  python -m src.cli validate check-gold",
         "",
+        "Worked examples on real rows: docs/labelling_guide.md",
+        "",
         "## opportunity_area  (use the CODE, e.g. `OA-04`)",
         "",
         "| Code | Name | Definition |",
