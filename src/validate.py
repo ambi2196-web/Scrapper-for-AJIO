@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import math
+import pathlib
 import random
 from typing import Any
 
@@ -228,6 +229,11 @@ def build_gold_sheet(n: int = 100, seed: int = 20260822) -> dict[str, Any]:
     sheet.to_csv(path, index=False, encoding="utf-8-sig")
 
     tax = load_taxonomy()
+    # A codebook next to the sheet. Without it the labeller has to cross-
+    # reference taxonomy.yaml, and a gold set labelled to a different scheme
+    # fails silently: the B-sweep scores against it, every comparison misses,
+    # and a batch size gets picked from noise.
+    _write_codebook(tax)
     return {
         "path": str(path.relative_to(ROOT)),
         "n": len(sheet),
@@ -240,6 +246,152 @@ def build_gold_sheet(n: int = 100, seed: int = 20260822) -> dict[str, Any]:
             "Fill the blank columns, save as data/gold/human_labels.csv, then run "
             "`python -m src.cli classify sweep-b` to derive batch_size_B."
         ),
+    }
+
+
+def _write_codebook(tax: dict[str, Any]) -> None:
+    lines = [
+        "# Codebook for data/gold/gold_sheet_TEMPLATE.csv",
+        "",
+        "Fill four columns. Use these EXACT values - the taxonomy is closed, and a",
+        "label outside it cannot be scored against classifier output.",
+        "",
+        "Validate before use:  python -m src.cli validate check-gold",
+        "",
+        "## opportunity_area  (use the CODE, e.g. `OA-04`)",
+        "",
+        "| Code | Name | Definition |",
+        "|---|---|---|",
+    ]
+    for a in tax["opportunity_areas"]:
+        gate = "  **[gated - still label it if it fits]**" if a["detectability"] in ("weak", "none") else ""
+        lines.append(f"| `{a['code']}` | {a['name']} | {a['definition']}{gate} |")
+    lines += [
+        "| `none` | No opportunity area | The utterance carries no friction from the list above. |",
+        "",
+        "`none` is a correct answer. Do not stretch an utterance to fit a code.",
+        "",
+        "## temporal_stance",
+        "",
+        "| Value | Meaning |",
+        "|---|---|",
+    ]
+    for t in tax["temporal_stance"]:
+        lines.append(f"| `{t['code']}` | {t['definition']} |")
+    lines += [
+        "",
+        "This is the field the whole engine rests on. `unclear` is a correct answer -",
+        "do not guess.",
+        "",
+        "## severity  (1, 2 or 3 - a number, not high/medium/low)",
+        "",
+        "| Level | Meaning |",
+        "|---|---|",
+    ]
+    for sv in tax["severity"]:
+        lines.append(f"| `{sv['level']}` | {sv['definition']} |")
+    lines += [
+        "",
+        "Leave blank when opportunity_area is `none`.",
+        "",
+        "## hesitation_marker  (`true` or `false`)",
+        "",
+        "`true` only where the speaker is visibly weighing, deferring or abandoning a",
+        "purchase in the text itself - not merely dissatisfied. If every row is",
+        "`false`, kappa on this field is undefined, so read the text for it rather",
+        "than defaulting.",
+        "",
+        "## When done",
+        "",
+        "Save as `data/gold/human_labels.csv`, then:",
+        "",
+        "```bash",
+        "python -m src.cli validate check-gold",
+        "```",
+    ]
+    (GOLD / "CODEBOOK.md").write_text(
+        chr(10).join(lines), encoding="utf-8", newline=chr(10)
+    )
+
+
+def check_gold(path: Any = None) -> dict[str, Any]:
+    """Validate a hand-labelled sheet against the FROZEN taxonomy before use.
+
+    Exists because a gold set labelled to a different scheme fails silently in
+    the worst possible way: the B-sweep scores classifier output against it, so
+    every comparison misses, accuracy reads ~0 at every B, and the sweep picks a
+    batch size from noise. Kappa then fails its gate for a reason that has
+    nothing to do with the classifier.
+
+    A gold set is the measuring stick. It has to be checked before it is used to
+    measure anything.
+    """
+    import pandas as pd
+
+    path = pathlib.Path(path) if path else (GOLD / "human_labels.csv")
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found")
+    df = pd.read_csv(path)
+
+    tax = load_taxonomy()
+    valid_area = {a["code"] for a in tax["opportunity_areas"]} | {"none"}
+    valid_stance = {t["code"] for t in tax["temporal_stance"]}
+    valid_sev = {str(s["level"]) for s in tax["severity"]} | {""}
+    valid_bool = {"true", "false", "1", "0", "yes", "no", ""}
+
+    problems: list[str] = []
+    if "utterance_id" not in df.columns:
+        problems.append("missing required column utterance_id")
+
+    def offenders(col: str, allowed: set[str]) -> list[str]:
+        if col not in df.columns:
+            problems.append(f"missing required column {col}")
+            return []
+        seen = {str(v).strip() for v in df[col].dropna()}
+        return sorted(seen - allowed)
+
+    bad_area = offenders("opportunity_area", valid_area)
+    bad_stance = offenders("temporal_stance", valid_stance)
+    bad_sev = offenders("severity", valid_sev)
+    bad_hes = {str(v).strip().lower() for v in df.get("hesitation_marker", pd.Series(dtype=str)).dropna()} - valid_bool
+
+    if bad_area:
+        problems.append(
+            f"opportunity_area has {len(bad_area)} value(s) outside the frozen taxonomy: "
+            f"{bad_area[:12]}. The taxonomy is CLOSED - a label outside it cannot be "
+            "scored against classifier output."
+        )
+    if bad_stance:
+        problems.append(
+            f"temporal_stance has values outside the taxonomy: {bad_stance[:8]}. "
+            "Valid: pre_purchase, at_purchase, post_purchase, unclear. This is the "
+            "field the whole engine rests on."
+        )
+    if bad_sev:
+        problems.append(f"severity must be 1, 2 or 3 - got {bad_sev[:8]}")
+    if bad_hes:
+        problems.append(f"hesitation_marker must be boolean-ish - got {sorted(bad_hes)[:8]}")
+
+    # Zero variance in a field makes it useless for kappa: a constant column
+    # agrees with everything by chance, so the statistic is undefined.
+    for col in ("opportunity_area", "temporal_stance", "severity", "hesitation_marker"):
+        if col in df.columns and df[col].dropna().nunique() <= 1:
+            problems.append(
+                f"{col} has a single value across every row. Kappa is undefined on a "
+                "constant column - expected agreement is 1.0."
+            )
+
+    return {
+        "path": str(path),
+        "rows": int(len(df)),
+        "valid": not problems,
+        "problems": problems,
+        "expected": {
+            "opportunity_area": sorted(valid_area),
+            "temporal_stance": sorted(valid_stance),
+            "severity": [1, 2, 3],
+            "hesitation_marker": ["true", "false"],
+        },
     }
 
 

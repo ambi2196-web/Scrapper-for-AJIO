@@ -142,6 +142,12 @@ def cmd_quota(_: argparse.Namespace) -> None:
 def cmd_validate(args: argparse.Namespace) -> None:
     from src import validate
 
+    if args.what == "check-gold":
+        result = validate.check_gold()
+        _print(result)
+        if not result["valid"]:
+            sys.exit(1)
+        return
     if args.what == "model-kappa":
         _print(validate.model_vs_model())
     elif args.what == "human-kappa":
@@ -241,7 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("quota", help="LLM quota consumed/remaining today").set_defaults(func=cmd_quota)
 
     va = sub.add_parser("validate", help="S6")
-    va.add_argument("what", choices=["model-kappa", "human-kappa", "sweep-tau", "sample-size"])
+    va.add_argument("what", choices=["check-gold", "model-kappa", "human-kappa", "sweep-tau", "sample-size"])
     va.add_argument("--smallest-p", type=float, default=0.05)
     va.add_argument("--smallest-diff", type=float, default=0.05)
     va.set_defaults(func=cmd_validate)
