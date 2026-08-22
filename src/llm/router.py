@@ -69,13 +69,16 @@ class Limits:
 #    escalation meaningful: lane B is a more capable model in the SAME family,
 #    which is what the spec intends by escalation.
 #
-# 2. Google no longer publishes per-model free-tier limits. The rate-limits doc
-#    now says limits "can be viewed in Google AI Studio" and gives no table, so
-#    there is no citable figure to encode. The values below are therefore
-#    deliberately CONSERVATIVE rather than authoritative: they under-claim, and
-#    the router's 429 handling with Retry-After is the real enforcement. Under-
-#    claiming costs throughput; over-claiming would burn the daily quota by
-#    mid-afternoon, which is the expensive direction of the error.
+# 2. Google no longer publishes per-model free-tier limits in the docs - they
+#    defer to an authenticated AI Studio dashboard. The first values here were
+#    guessed conservatively at rpd=1000 and were WRONG BY 2x: the provider's own
+#    429 names the real figure, "limit: 500, model: gemini-3.5-flash-lite", and
+#    the run hit it after ~8,700 utterances.
+#
+#    Corrected to the measured 500. The lesson is in the correction: a guess in
+#    the generous direction is not conservative, it just moves the failure to
+#    the middle of a long run. Where a provider states a limit in an error, that
+#    statement is the citation.
 #
 # Groq's limits ARE authoritative - read from x-ratelimit-* response headers on
 # 22 Aug 2026: 1,000 requests/day, 8,000 tokens/minute. Both match the spec.
@@ -88,7 +91,8 @@ LANES: dict[str, dict[str, Any]] = {
         "provider": "gemini",
         "model": "gemini-3.5-flash-lite",
         "role": "bulk classification (S5 pass 1, full corpus)",
-        "limits": Limits(rpm=15, rpd=1000, tpm=250_000),
+        # rpd from the provider's own 429 on 22 Aug 2026: "limit: 500".
+        "limits": Limits(rpm=15, rpd=500, tpm=250_000),
         # Measured 22 Aug 2026: 425 output tokens against 1,572 input.
         "output_ratio": 0.4,
     },
@@ -96,7 +100,9 @@ LANES: dict[str, dict[str, Any]] = {
         "provider": "gemini",
         "model": "gemini-3.5-flash",
         "role": "escalation for confidence < tau, single-utterance calls",
-        "limits": Limits(rpm=10, rpd=250, tpm=250_000),
+        # Unverified - lane B has not yet hit its wall. Kept low deliberately:
+        # under-claiming costs throughput, over-claiming costs a run.
+        "limits": Limits(rpm=10, rpd=100, tpm=250_000),
         "output_ratio": 0.6,
     },
     "C": {

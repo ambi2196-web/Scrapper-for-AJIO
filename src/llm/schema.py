@@ -84,9 +84,29 @@ def check_evidence(label: Label, reference_text: str) -> str | None:
     The quote must be a character-for-character substring of the text the model
     was shown. This is the single check that makes every downstream number
     auditable: any count can be walked back to a span in a specific review.
+
+    ONE EXEMPTION, and it is load-bearing: `opportunity_area == "none"` does not
+    require a quote.
+
+    I3 as written in 04 §0 asks every classification to carry a quote. Applied
+    to `none` that is incoherent - there is no substring that evidences the
+    ABSENCE of a signal, so the model returns an empty quote with high
+    confidence, because it is genuinely confident the answer is none.
+
+    Measured on the first 8,980 lane A labels, that discarded 299 rows of which
+    269 - ninety percent - claimed `none`, against 56% `none` among accepted
+    rows. Those rows would never have contributed to a numerator but do belong
+    in every denominator, so quarantining them INFLATES every prevalence rate,
+    by ~3% at that point and growing with the run.
+
+    I3's purpose is that every CLAIM is traceable. A `none` is not a claim about
+    an opportunity area, so exempting it preserves the invariant's intent while
+    removing a systematic bias in a known direction.
     """
     quote = label.evidence_quote or ""
     if not quote:
+        if label.opportunity_area == "none":
+            return None  # nothing to quote; see the docstring
         if label.confidence == 0:
             return None  # the prompt's documented escape hatch
         return "empty evidence_quote with non-zero confidence"
