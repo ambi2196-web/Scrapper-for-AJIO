@@ -297,7 +297,10 @@ def run_lane_c(sample_size: int | None = None, seed: int = 20260822) -> dict[str
     """
     load_proximity()
     target = sample_size or int(threshold("validation.lane_c_sample_target_per_day"))
-    batch_size = int(threshold("classification.batch_size_B"))
+    # Lane C uses its OWN batch size. Gemini's B=20 would cost ~10,300 tokens on
+    # Groq - more than the entire 8,000 TPM minute in one call - because
+    # gpt-oss-120b's output exceeds its input.
+    batch_size = int(threshold("validation.lane_c_batch_size"))
     template = _load_template("classify_v1_groq.txt")
 
     rows = list(read_filtered())

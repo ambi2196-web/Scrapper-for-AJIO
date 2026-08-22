@@ -88,8 +88,31 @@ validation:
     todo: "Set with n. Reweight to population before computing kappa, or kappa understates agreement."
 
   lane_c_sample_target_per_day:
-    value: 1200
-    source: "derived:src.llm.router — Groq free tier 200,000 TPD / ~160 tokens per utterance at B=20"
+    value: 340
+    source: "derived:measured against the live Groq API, 22 Aug 2026"
+    note: >
+      04 §4.1 estimated ~1,300 utterances/day from a ~160 tokens-per-utterance
+      assumption. Measured, gpt-oss-120b emits ~396 OUTPUT tokens per utterance
+      because it reasons before answering - output exceeds input on this task.
+
+      At B=10 a call costs ~5,860 tokens for 10 utterances (586/utterance), so
+      the 200,000 TPD cap allows ~341. B is capped at 10 by the 8,000 TPM
+      ceiling: B=20 would need ~10,320 tokens, more than a whole minute's budget
+      in a single call.
+
+      gpt-oss-120b was retained after testing the alternatives: gpt-oss-20b and
+      qwen3.6-27b both fail JSON generation on this schema, so it is the only
+      Groq model that can do the job - the spec's choice, now measured rather
+      than assumed.
+
+  lane_c_batch_size:
+    value: 10
+    source: "derived:Groq 8,000 TPM ceiling measured 22 Aug 2026"
+    note: >
+      Separate from classification.batch_size_B, which governs lane A on Gemini.
+      Lane C is bounded by a different constraint: 1,400 preamble + ~446 tokens
+      per utterance must stay under 8,000 TPM, giving B <= 14. Ten is chosen over
+      fourteen for headroom, since exceeding TPM costs the entire minute.
 
 statistics:
 

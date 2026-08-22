@@ -4,10 +4,12 @@ This module is where free-tier builds fail, so it is built first and everything
 downstream depends on it.
 
 The core design decision: limits are enforced BEFORE sending, not in reaction to
-429s. On Groq's 8,000 tokens-per-minute free budget, a single B=20 batch is
-~3,000 tokens - more than a third of the minute's entire allowance. React to a
-429 there and you have already lost the minute; three of them and the run stalls
-for no reason other than arithmetic you could have done in advance.
+429s, and the reservation counts EXPECTED OUTPUT as well as the prompt. On
+Groq's 8,000 tokens-per-minute budget a B=20 batch measures ~10,300 tokens -
+over the whole minute in one call - because gpt-oss-120b reasons before
+answering and its output exceeds its input. Reserving only the prompt would wave
+that call through and collect the 429 afterwards, when the minute is already
+gone.
 
 The second design decision: the daily counters are persistent. A limiter that
 resets when the process restarts will burn a 1,500-request daily quota by
@@ -15,10 +17,13 @@ mid-afternoon across four crashed runs and leave nothing for the evening, which
 is exactly when the bulk classification pass wants to be running. Daily state is
 replayed from logs/llm_ledger.jsonl on boot.
 
-Routing (see 04 §4.2):
-  Lane A - Gemini 2.5 Flash-Lite - bulk classification, full corpus
-  Lane B - Gemini 2.5 Flash      - escalation for confidence < tau, B=1
+Routing (see 04 §4.2), re-verified against the live API 22 Aug 2026:
+  Lane A - Gemini 3.5 Flash-Lite - bulk classification, full corpus
+  Lane B - Gemini 3.5 Flash      - escalation for confidence < tau, B=1
   Lane C - Groq gpt-oss-120b     - blind second annotator, stratified sample
+
+The 2.5 models the spec names are gone (404, "no longer available to new
+users"), so lanes A and B moved a generation.
 
 Lane C is not a cheaper copy of lane A. It is a different model family from a
 different vendor, because a second pass by the same model measures nothing - a
@@ -84,20 +89,31 @@ LANES: dict[str, dict[str, Any]] = {
         "model": "gemini-3.5-flash-lite",
         "role": "bulk classification (S5 pass 1, full corpus)",
         "limits": Limits(rpm=15, rpd=1000, tpm=250_000),
+        # Measured 22 Aug 2026: 425 output tokens against 1,572 input.
+        "output_ratio": 0.4,
     },
     "B": {
         "provider": "gemini",
         "model": "gemini-3.5-flash",
         "role": "escalation for confidence < tau, single-utterance calls",
         "limits": Limits(rpm=10, rpd=250, tpm=250_000),
+        "output_ratio": 0.6,
     },
     "C": {
         "provider": "groq",
         "model": "openai/gpt-oss-120b",
         "role": "blind second annotator (independent, stratified sample)",
-        # TPD is the binding limit here, not RPM: 200k/day at ~3k per B=20 call
-        # is ~65 calls, ~1,300 utterances. That is the honest daily ceiling.
+        # TPD is the binding limit, and it is FAR tighter than the spec assumed.
+        # 04 §4.1 estimated ~1,300 utterances/day. Measured 22 Aug 2026, this
+        # model emits ~396 output tokens PER UTTERANCE, so at B=10 a call costs
+        # ~5,860 tokens for 10 utterances and the 200k/day cap allows ~341.
+        # Roughly a quarter of the spec's figure, which is why lane C is a small
+        # stratified sample rather than a second full pass.
         "limits": Limits(rpm=30, rpd=1000, tpm=8_000, tpd=200_000),
+        # Measured 22 Aug 2026: 1,556 output tokens against 1,397 input - this
+        # model reasons before answering, so output EXCEEDS input. Reserving only
+        # the prompt would let a batch through that blows the 8K minute.
+        "output_ratio": 2.5,
     },
 }
 
@@ -220,10 +236,23 @@ class DailyCounter:
         return rows
 
 
-def estimate_tokens(text: str) -> int:
-    """Conservative pre-send estimate. Over-estimating costs throughput; under-
-    estimating costs the minute, so this rounds up."""
-    return int(len(text) / 3.2) + 32
+def estimate_tokens(text: str, lane: str | None = None) -> int:
+    """Conservative pre-send estimate, INCLUDING expected output.
+
+    Counting only the prompt is the mistake that makes an 8,000 TPM budget
+    unusable. Measured 22 Aug 2026, Groq's gpt-oss-120b returned 1,556 output
+    tokens for a 3-utterance batch - it reasons verbosely, so output dominates
+    and can exceed input several times over. A limiter that reserves only the
+    prompt lets an oversized call through, the real usage blows the minute, and
+    the 429 arrives after the damage rather than before it. On an 8K/minute
+    budget that costs the whole minute.
+
+    So the reservation is prompt + prompt x output_ratio, where the ratio is
+    per-lane and measured rather than assumed.
+    """
+    prompt_tokens = int(len(text) / 3.2) + 32
+    ratio = LANES.get(lane, {}).get("output_ratio", 1.0) if lane else 1.0
+    return prompt_tokens + int(prompt_tokens * ratio)
 
 
 class Router:
@@ -255,7 +284,7 @@ class Router:
         """
         cfg = LANES[lane]
         provider, model, limits = cfg["provider"], cfg["model"], cfg["limits"]
-        est = estimate_tokens(prompt)
+        est = estimate_tokens(prompt, lane)
 
         self.daily.check(provider, model, limits, est)
         waited = self._buckets[lane].acquire(est)
