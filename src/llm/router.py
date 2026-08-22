@@ -55,6 +55,11 @@ class Limits:
     rpd: int
     tpm: int
     tpd: int | None = None
+    # Hours offset from UTC at which the PROVIDER's daily counter resets.
+    # Google resets at midnight US/Pacific; anchoring to local midnight instead
+    # makes the limiter believe a fresh day has started up to 12.5 hours early,
+    # which is how a resume runs straight into a wall it thinks is gone.
+    reset_utc_offset_hours: float = -7.0
 
 
 # Re-verified against the live API on 22 Aug 2026, as 04 §4.1 instructs.
@@ -115,7 +120,7 @@ LANES: dict[str, dict[str, Any]] = {
         # ~5,860 tokens for 10 utterances and the 200k/day cap allows ~341.
         # Roughly a quarter of the spec's figure, which is why lane C is a small
         # stratified sample rather than a second full pass.
-        "limits": Limits(rpm=30, rpd=1000, tpm=8_000, tpd=200_000),
+        "limits": Limits(rpm=30, rpd=1000, tpm=8_000, tpd=200_000, reset_utc_offset_hours=0.0),
         # Measured 22 Aug 2026: 1,556 output tokens against 1,397 input - this
         # model reasons before answering, so output EXCEEDS input. Reserving only
         # the prompt would let a batch through that blows the 8K minute.
@@ -176,13 +181,20 @@ class DailyCounter:
         self._replay()
 
     @staticmethod
-    def _today() -> str:
-        return _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=5, minutes=30))).date().isoformat()
+    def _window_start(offset_hours: float) -> _dt.datetime:
+        """Start of the provider's current quota day, as an absolute instant."""
+        tz = _dt.timezone(_dt.timedelta(hours=offset_hours))
+        now_local = _dt.datetime.now(tz)
+        return now_local.replace(hour=0, minute=0, second=0, microsecond=0)
 
     def _replay(self) -> None:
         if not LEDGER.exists():
             return
-        today = self._today()
+        # One window per lane, because providers reset on different clocks.
+        windows = {
+            (cfg["provider"], cfg["model"]): self._window_start(cfg["limits"].reset_utc_offset_hours)
+            for cfg in LANES.values()
+        }
         with LEDGER.open(encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
@@ -192,9 +204,23 @@ class DailyCounter:
                     entry = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if not str(entry.get("at", "")).startswith(today):
+                # A rejected call does not consume provider quota. Counting 429s
+                # as spend made twelve hours of failed retries look like 12 hours
+                # of consumption and hid how much quota was actually left.
+                if entry.get("outcome") != "ok":
                     continue
                 key = (entry.get("provider"), entry.get("model"))
+                start = windows.get(key)
+                if start is None:
+                    continue
+                try:
+                    when = _dt.datetime.fromisoformat(str(entry.get("at")))
+                except ValueError:
+                    continue
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=_dt.timezone.utc)
+                if when < start:
+                    continue
                 self.requests[key] = self.requests.get(key, 0) + 1
                 total = int(entry.get("prompt_tokens") or 0) + int(entry.get("completion_tokens") or 0)
                 self.tokens[key] = self.tokens.get(key, 0) + total
@@ -202,9 +228,13 @@ class DailyCounter:
     def check(self, provider: str, model: str, limits: Limits, est_tokens: int) -> None:
         key = (provider, model)
         if self.requests.get(key, 0) >= limits.rpd:
+            resets_at = self._window_start(limits.reset_utc_offset_hours) + _dt.timedelta(days=1)
+            local = resets_at.astimezone()
             raise QuotaExhausted(
                 f"{provider}/{model}: daily request cap reached "
-                f"({self.requests.get(key, 0)}/{limits.rpd}). Resets at provider midnight."
+                f"({self.requests.get(key, 0)}/{limits.rpd}). "
+                f"Provider quota resets {resets_at.isoformat(timespec='minutes')} "
+                f"(= {local.strftime('%Y-%m-%d %H:%M %Z')} local)."
             )
         if limits.tpd is not None and self.tokens.get(key, 0) + est_tokens > limits.tpd:
             raise QuotaExhausted(
