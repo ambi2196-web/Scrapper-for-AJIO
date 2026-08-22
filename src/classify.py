@@ -15,6 +15,7 @@ a real one, and every count built on it inherits that.
 from __future__ import annotations
 
 import json
+import math
 import pathlib
 import random
 from typing import Any, Iterable, Iterator
@@ -511,14 +512,44 @@ def sweep_batch_size_by_agreement(n: int = 100, seed: int = 20260822) -> dict[st
     # The rule: largest B that is statistically indistinguishable from the
     # reference AND omitted nothing. Omission is disqualifying on its own - a
     # batch size that silently drops utterances loses them from the denominator.
+    # 04 §4.3 says take the LARGEST indistinguishable B, on the rationale that
+    # "throughput rises monotonically with B; quality is the only limit". That
+    # rationale only discriminates when throughput is actually binding.
+    #
+    # Here it often is not: several B fit inside one day's request quota, and
+    # once they do, a larger B buys nothing. So the rule is applied in two steps:
+    #   1. keep the B values indistinguishable from the noise floor, no omissions
+    #   2. among those that FIT the daily request budget, take the SMALLEST
+    # Step 2's tie-break is blast radius. A failed, deferred or quarantined batch
+    # costs B utterances, so where throughput is free the smaller batch is
+    # strictly cheaper to recover from. If nothing fits the budget, fall back to
+    # the largest eligible B - then throughput IS binding and the spec's
+    # rationale applies as written.
     eligible = [r["B"] for r in results if r["omitted"] == 0 and r.get("indistinguishable")]
-    chosen = max(eligible) if eligible else reference_b
+    corpus_size = len(rows)
+    rpd = LANES["A"]["limits"].rpd
+    fits = [b for b in eligible if math.ceil(corpus_size / b) <= rpd]
+    if fits:
+        chosen, tie_break = min(fits), "smallest eligible B that fits the daily request budget"
+    elif eligible:
+        chosen, tie_break = max(eligible), "largest eligible B; none fits the budget, so throughput binds"
+    else:
+        chosen, tie_break = reference_b, "no B was indistinguishable from the floor; fell back to the reference"
 
     report = {
         "at": now_ist(), "stage": "S5-sweep", "method": "agreement_with_smallest_B",
         "reference_B": reference_b, "n": len(subset), "grid": grid,
         "nondeterminism_floor": floor,
         "results": results, "chosen_B": chosen,
+        "corpus_utterances": corpus_size,
+        "calls_at_chosen_B": math.ceil(corpus_size / chosen),
+        "daily_request_budget": rpd,
+        "tie_break": tie_break,
+        "power_caveat": (
+            f"n={len(subset)} gives limited power: the test cannot detect a small "
+            "degradation, so 'indistinguishable' here means no evidence of harm "
+            "rather than evidence of no harm."
+        ),
         "rule": (
             "largest B whose disagreement with the reference is statistically "
             "indistinguishable from the model's own run-to-run floor, with zero omissions"

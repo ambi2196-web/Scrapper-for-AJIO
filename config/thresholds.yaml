@@ -23,13 +23,38 @@ classification:
       corpus mean. Do not default to 0.7.
 
   batch_size_B:
-    value: null
-    source: "derived:src.classify.sweep_batch_size"
-    todo: >
-      Sweep B in {5,10,20,40} against a fixed 100-utterance gold subset. Pick
-      the largest B whose accuracy is statistically indistinguishable from B=5
-      (two-proportion test, alpha below). Throughput rises monotonically with
-      B; quality is the only limit, so measure it.
+    value: 20
+    source: "derived:src.classify.sweep_batch_size_by_agreement"
+    note: >
+      Derived 22 Aug 2026 on n=60 utterances with gemini-3.5-flash-lite at
+      temperature 0.
+
+      METHOD. The gold-based accuracy sweep in 04 §4.3 needs valid hand labels,
+      which did not exist at run time, so B was derived from label STABILITY -
+      the specific thing a large batch threatens, via attention dilution. The
+      smallest B is run TWICE to establish the model's own run-to-run
+      nondeterminism floor (98.3% agreement); temperature 0 constrains sampling
+      but does not make a large model bit-exact. A larger B is only disqualified
+      if it disagrees MORE than that floor.
+
+      RESULT. Every B in {5,10,20,40} was indistinguishable from the floor with
+      zero omissions: B=10 93.3% (p=0.17), B=20 96.7% (p=0.56), B=40 93.3%
+      (p=0.17).
+
+      TIE-BREAK. 04 §4.3 says take the largest, because "throughput rises
+      monotonically with B". That only discriminates when throughput binds. Over
+      14,379 utterances against a 1,000 request/day budget, B=5 needs 2,876
+      calls and B=10 needs 1,438 - neither fits - while B=20 (719) and B=40 (360)
+      both do. Once a B fits inside one day, a larger one buys nothing, so the
+      tie-break is blast radius: a failed, deferred or quarantined batch costs B
+      utterances, making the smaller fitting batch strictly cheaper to recover
+      from. Hence 20, not 40.
+
+      CAVEAT. n=60 gives limited power - this is no evidence of harm, not
+      evidence of no harm. It also measures stability rather than accuracy: a
+      model consistently wrong the same way at every B would pass. The
+      gold-based sweep remains owed and takes precedence once valid hand labels
+      exist.
 
   batch_size_B_sweep_grid:
     value: [5, 10, 20, 40]
