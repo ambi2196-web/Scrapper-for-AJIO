@@ -114,7 +114,23 @@ if not agg.empty:
     st.dataframe(counts, use_container_width=True, hide_index=True)
 
 # --- structural limits ------------------------------------------------------
-st.subheader("4 · Limits of the method as a whole")
+st.subheader("4 · Severity is not reliably adjudicable from short review text")
+st.markdown("""
+Measured, not assumed. Two independent models — Gemini 3.5 Flash-Lite and Groq
+`gpt-oss-120b`, sharing no prompt and no lineage — agree on only **57% of
+severity judgements** (AC1 0.394). Against the human gold set the figure is
+similar (AC1 0.481, κ 0.239).
+
+A field that two independent readers cannot agree on is not a miscalibrated
+classifier that a better prompt would fix. It is a field the evidence does not
+determine: a short review says *what* went wrong far more reliably than it says
+whether the speaker carried on anyway, changed what they did, or left for good.
+
+The consequence is recorded rather than worked around. Where severity enters the
+opportunity index it is flagged, and the reliability figures travel with it.
+""")
+
+st.subheader("5 · Limits of the method as a whole")
 st.markdown("""
 **People who never say anything.** Every source here is a record of someone who
 chose to write. The shopper who added an item to a wishlist, forgot about it and

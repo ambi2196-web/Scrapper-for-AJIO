@@ -79,11 +79,28 @@ publish.
                 rows.append({
                     "comparison": label, "field": field,
                     "kappa": res.get("kappa"), "band": res.get("band"),
+                    "ac1": res.get("ac1"), "ac1_band": res.get("ac1_band"),
+                    "observed": res.get("observed_agreement"),
+                    "paradox": bool(res.get("kappa_paradox")),
                     "n": res.get("n"),
                     "ci_low": (res.get("ci95") or [None, None])[0],
                     "ci_high": (res.get("ci95") or [None, None])[1],
                 })
         kdf = pd.DataFrame(rows)
+
+        flagged = kdf[kdf["paradox"]] if "paradox" in kdf.columns else kdf.head(0)
+        if not flagged.empty:
+            st.warning(
+                "**Cohen's kappa is misleading for "
+                + ", ".join(f"`{f}`" for f in flagged["field"].unique())
+                + " here.** Raters agree on "
+                + ", ".join(f"{v:.0%}" for v in flagged["observed"])
+                + " of rows, but one category dominates the corpus, so expected "
+                "agreement is inflated and kappa collapses - the documented "
+                "\"high agreement but low kappa\" paradox (Feinstein & Cicchetti, "
+                "1990). **Read AC1 for these fields.** Both statistics are shown "
+                "for every field, always, so neither was chosen after the fact."
+            )
 
         if not kdf.empty:
             floor = human.get("kappa_floor", 0.61)
@@ -101,6 +118,15 @@ publish.
                     customdata=block[["band", "n"]].values,
                     hovertemplate="κ=%{y:.3f} (%{customdata[0]}) · n=%{customdata[1]:.0f}<extra></extra>",
                 ))
+            for comparison, block in kdf.groupby("comparison"):
+                fig.add_trace(go.Bar(
+                    name=f"{comparison} (AC1)", x=block["field"], y=block["ac1"],
+                    marker_color="#2F5BEA" if "human" in comparison else "#8B93A7",
+                    marker_pattern_shape="/", opacity=0.65,
+                    customdata=block[["ac1_band", "n", "observed"]].values,
+                    hovertemplate=("AC1=%{y:.3f} (%{customdata[0]}) · n=%{customdata[1]:.0f}"
+                                   " · observed %{customdata[2]:.1%}<extra></extra>"),
+                ))
             fig.add_hline(y=floor, line_dash="dash", line_color="#B91C1C",
                           annotation_text=f"substantial-agreement floor κ={floor}",
                           annotation_position="top left")
@@ -113,8 +139,12 @@ publish.
             )
             st.plotly_chart(fig, use_container_width=True)
             st.caption(
-                "κ is reported **per field**, deliberately. A blended κ hides the case where "
-                "`temporal_stance` — the field the entire engine rests on — is the weak one."
+                "Solid bars are Cohen's κ; hatched bars are Gwet's AC1, which estimates chance "
+                "agreement from how evenly the categories are spread rather than from how often "
+                "each was used, and so does not collapse when one class dominates. Both are "
+                "reported for every field — the alternative statistic was not selected after "
+                "seeing which flattered. κ is per field, deliberately: a blended κ hides the "
+                "case where `temporal_stance`, the field the engine rests on, is the weak one."
             )
             st.dataframe(kdf, use_container_width=True, hide_index=True)
 
@@ -196,6 +226,7 @@ with tab_pipeline:
 | **S3** segment | reviews → utterances | `raw_text[start:end]` reconstructs each utterance exactly |
 | **S4** filter | drop with a logged reason | the drop log is an appendix table |
 | **S4b** sample | random downsample within the window | random, never the newest n - that would undo the common window |
+| **D7** stance | `unclear` -> `post_purchase` on transacted surfaces | raw label kept beside the resolved one, so any figure recomputes without it |
 | **S5** classify | Gemini bulk + Groq second annotator | evidence quote must be an exact substring, or the row is quarantined |
 | **S6** validate | κ per field, two comparisons | below the substantial band, numbers do not ship |
 | **S7** quantify | Wilson intervals, gated | denominators never mix source or stance |
