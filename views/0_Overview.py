@@ -118,17 +118,24 @@ aggregation, so no value exists that could later leak into a slide.
 with right:
     st.subheader("Reference source")
     st.markdown("""
-Product-page **Q&A is the reference surface** for the opportunity index, because
-it is the only public text that is pre-purchase *by construction* rather than by
-classification.
+The index was designed to rest on **product-page Q&A**, because that is the only
+public text which is pre-purchase *by construction* rather than by
+classification. **That surface does not exist.** AJIO publishes no customer
+reviews or Q&A on its product pages — checked across a random sample drawn from
+its own sitemap, every one returns reviews disabled — and the `/api/` path any
+payload would arrive on is disallowed by `robots.txt`.
 
-A review is written by someone who already bought; their account of what made
-them hesitate is a reconstruction. A question on a product page is a person
-hesitating in public, in the present tense, before deciding — which is the
-closest textual proxy to a wishlist decision that exists in public data.
+So the index is anchored instead to **Play, pre-purchase**. Stance there is
+*inferred* by the classifier from wording, not guaranteed by the surface, which
+is a weaker claim and is stated as one.
 
-App-store reviews carry the volume and the brand-vs-brand differential. Q&A
-carries the construct validity.
+What makes it defensible is that `temporal_stance` is the best-validated field
+in the engine — κ 0.71, AC1 0.97, 97% observed agreement against hand labels.
+The index rests on whichever field survived validation most convincingly, which
+is the strongest position available once the reference surface was lost.
+
+Pre-purchase utterances are ~4% of the corpus. That is a small base, and the
+Wilson intervals show it.
 """)
 
 if len(gated):

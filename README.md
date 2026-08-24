@@ -28,7 +28,19 @@ public record cannot adjudicate get no number at all — they get a stated reaso
 | Taxonomy (12 OAs), frozen as `tax_v1` | ✅ transcribed from 03 §4 |
 | `wishlist_proximity` (D5) | ✅ frozen before classification, commit `406dcc7` |
 | Category scope (D1), PDP ToS (D3) | ✅ settled 22 Aug 2026 |
-| **Collection (S1)** | ⬜ next — Phase 2 |
+| Collection (S1) | ✅ 62,811 reviews, 6 brand-source cells |
+| Prep (S2–S4b) | ✅ 79,199 utterances → 14,379 sampled |
+| Classification (S5) | ✅ 14,304 labelled, 0.67% quarantine |
+| Validation (S6) | ⚠️ **gate FAILS** on `opportunity_area` and `severity` |
+| Quantify / compare / emit (S7–S9) | ✅ three deck files + dashboard snapshot |
+| Dashboard | ✅ renders on real data; ready to deploy |
+
+**The gate result is the headline, and it is not a formality.** `temporal_stance`
+passes (κ 0.71 / AC1 0.97). `opportunity_area` fails against human labels
+(κ 0.44) but passes model-vs-model (κ 0.63) — and 19 of the 100 hand labels
+apply OA-01/OA-02 to delivery failures and refund disputes, which is the whole
+gap. `severity` fails everywhere, including between two independent models
+(AC1 0.47), so it is dropped from the index rather than re-run. See D9.
 
 Phase 0 is closed; every decision is recorded in
 [`docs/decisions.md`](docs/decisions.md) with its reason and its date.
