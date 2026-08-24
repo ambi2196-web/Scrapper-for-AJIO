@@ -345,6 +345,35 @@ for the other version.
 
 ---
 
+### D10 · Lane B escalation not run
+**Settled:** 24 Aug 2026
+
+Lane B re-classifies utterances whose lane A confidence falls below tau, one at
+a time on a more capable model. It is not run for this pass.
+
+`tau` is derived by plotting lane A accuracy against the gold set, bucketed by
+self-reported confidence, and taking the bucket where accuracy first drops below
+the corpus mean (04 §4.3). That derivation requires a gold set whose labels are
+correct. This one has 19 rows of 69 where OA-01 and OA-02 were applied to
+delivery failures and refund disputes - errors concentrated in specific codes
+rather than spread randomly, so they would bias the accuracy curve rather than
+merely blur it.
+
+Deriving tau from that set would produce a number with a derivation attached and
+no validity behind it, which is exactly the failure I6 exists to prevent - and
+escalating on it would spend the daily quota re-labelling rows chosen by a
+broken threshold.
+
+**Consequence:** no confidence-based escalation, so `escalated` is false on every
+row and the low-confidence tail carries lane A's original labels. Confidence is
+still emitted per row, so anyone can filter on it.
+
+**To run it later:** correct the 19 gold rows, then
+`validate sweep-tau` -> write `tau_escalation` -> `classify b`. The corpus does
+not need re-labelling; lane B only supplements.
+
+---
+
 ### B1 · LLM routing decided from token arithmetic, not vendor speed claims
 **Settled:** 21 Aug 2026
 

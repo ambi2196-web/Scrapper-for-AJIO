@@ -12,15 +12,30 @@ from typing import Any
 from src.config import api_key
 from src.llm.router import QuotaExhausted, RetryableError
 
-_RETRYABLE_MARKERS = ("429", "500", "503", "resource_exhausted", "unavailable", "deadline")
+_RETRYABLE_MARKERS = (
+    "429", "500", "503", "resource_exhausted", "unavailable", "deadline",
+    "timeout", "timed out", "connection", "read operation",
+)
+
+
+# A hung request with no timeout blocks the whole run, silently and forever.
+# Observed 24 Aug 2026: 175 calls averaging 7s each, then one call that never
+# returned and a stage that sat there for 22 minutes producing nothing and
+# printing nothing. A finite timeout turns that into a retryable error, which
+# the router already knows how to handle.
+REQUEST_TIMEOUT_MS = 120_000
 
 
 def _client() -> Any:
     try:
         from google import genai
+        from google.genai import types as _types
     except ImportError as exc:
         raise RuntimeError("pip install google-genai") from exc
-    return genai.Client(api_key=api_key("GEMINI_API_KEY"))
+    return genai.Client(
+        api_key=api_key("GEMINI_API_KEY"),
+        http_options=_types.HttpOptions(timeout=REQUEST_TIMEOUT_MS),
+    )
 
 
 def invoke(model: str, prompt: str, *, response_schema: dict[str, Any] | None = None) -> tuple[str, int, int]:
