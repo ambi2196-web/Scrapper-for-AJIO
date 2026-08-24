@@ -57,7 +57,7 @@ evidence.
 ## Quick start
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-pipeline.txt
 cp .env.example .env        # fill in your free-tier keys
 ```
 

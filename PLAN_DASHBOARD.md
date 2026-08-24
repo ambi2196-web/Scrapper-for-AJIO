@@ -182,17 +182,17 @@ produces its data rather than a stack trace.
 | Branch | `main` |
 | Main file | `streamlit_app.py` |
 
-**3 · Dependencies.** Add this to *Advanced settings → Python dependencies file*,
-or rename it at the repo root:
+**3 · Dependencies — nothing to configure.** Streamlit Cloud looks for
+`requirements.txt` at the repo root and installs it automatically, **ignoring any
+other filename regardless of what the UI's dependencies-file setting says.** So
+`requirements.txt` holds the five packages the dashboard needs, and the pipeline's
+dependencies live in `requirements-pipeline.txt`, installed explicitly.
 
-```
-requirements-dashboard.txt
-```
-
-This matters. `requirements.txt` pulls Playwright, the scraper libraries and both
-LLM SDKs — none of which the dashboard uses. `requirements-dashboard.txt` is
-seven packages, so the Cloud build is fast and the deployed app has no library
-capable of making an outbound call.
+The first deploy failed on exactly this: the full pipeline list was in
+`requirements.txt`, and `app-store-scraper` pins `requests==2.23.0` while
+`google-genai` needs `>=2.28.1` — unsatisfiable. That library was already dead
+code (the App Store collector uses Apple's RSS feed over httpx) and is now gone
+from the pipeline file too.
 
 **4 · Secrets: none.** Deliberately. The dashboard reads files; it has no keys to
 leak. `.streamlit/secrets.toml` is gitignored anyway.
@@ -202,7 +202,7 @@ leak. `.streamlit/secrets.toml` is gitignored anyway.
 
 > If the Cloud UI won't let you point at a non-default requirements file, rename
 > `requirements.txt` → `requirements-pipeline.txt` and
-> `requirements-dashboard.txt` → `requirements.txt`. The pipeline is run locally
+> `requirements.txt` → `requirements.txt`. The pipeline is run locally
 > from an explicit file, so nothing breaks.
 
 ---

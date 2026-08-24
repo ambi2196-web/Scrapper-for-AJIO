@@ -440,9 +440,35 @@ in the engine, and a public repo is a poor place for them.
 **Settled:** 22 Aug 2026
 
 The deployed app performs no scraping and makes no LLM calls.
-`requirements-dashboard.txt` omits every collection and provider library, so the
+`requirements.txt` holds only the five dashboard packages and omits every
+collection and provider library, so the
 deployed dashboard has no library capable of an outbound call. It is also why the
 Cloud build is fast and needs no secrets.
+
+### B11 · requirements.txt holds the DASHBOARD dependencies, not the pipeline's
+**Settled:** 24 Aug 2026 · **After the first Cloud deploy failed**
+
+Streamlit Cloud installs whatever is named `requirements.txt` at the repo root
+and ignores any other filename, regardless of the dependencies-file setting in
+its UI. The original arrangement - pipeline deps in `requirements.txt`, dashboard
+deps in `requirements-dashboard.txt` - therefore had it exactly backwards, and
+the deploy died resolving dependencies the dashboard never uses.
+
+The failure itself was `app-store-scraper`, which pins `requests==2.23.0` while
+`google-genai` requires `>=2.28.1`. Unsatisfiable. That library had already been
+removed from the code days earlier - the App Store collector uses Apple's own RSS
+JSON feed over httpx, because app-store-scraper is broken against urllib3 v2 -
+but it was left sitting in the requirements file. Dead dependencies are not inert;
+this one blocked a deploy.
+
+Now: `requirements.txt` carries five packages (streamlit, pandas, pyarrow,
+plotly, pyyaml), verified against a static import scan of every dashboard module.
+`requirements-pipeline.txt` carries the pipeline and is installed explicitly.
+
+The separation has a second benefit worth keeping: the deployed app has no
+library capable of an outbound HTTP call, so "the dashboard never scrapes and
+never calls an LLM" is enforced by what is installed rather than by what the code
+happens to do.
 
 ### B7 · `addressability` implemented as a hard gate, not a weight
 **Settled:** 22 Aug 2026
