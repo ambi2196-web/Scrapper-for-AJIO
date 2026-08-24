@@ -276,6 +276,75 @@ only for `play` and `appstore`.
 
 ---
 
+### D8 · Opportunity index re-anchored to Play pre_purchase
+**Settled:** 24 Aug 2026 · **Forced by D3-OUTCOME**
+
+03 §5.2 names AJIO PDP Q&A as the index reference because it is pre-purchase
+**by construction**. That surface does not exist - AJIO publishes no product
+reviews or Q&A - and §5.1 forbids mixing sources in a denominator, so the index
+was undefined until a replacement was named.
+
+**Decision: Play, pre_purchase.** Play over App Store because it carries 12x the
+volume (6,985 vs 867 utterances) and the App Store's ~500-row pagination ceiling
+already bars Myntra from that surface's comparison.
+
+**The weakening, stated plainly.** No pre-purchase-by-construction surface
+survives. Stance on Play is INFERRED by the classifier from wording, not
+guaranteed by the surface, so the index now rests on a classification rather
+than on a structural fact. Every number derived from it inherits that.
+
+What makes it defensible at all is that `temporal_stance` is the
+best-validated field in the engine - kappa 0.851, AC1 0.985, 98.6% observed
+agreement against human labels. The index rests on the field that survived
+validation most convincingly, which is the strongest available position given
+the reference source was lost.
+
+The 453 pre-purchase utterances are ~5% of the corpus. That is a small base and
+the Wilson intervals will show it.
+
+---
+
+### D9 · Severity removed from the opportunity index
+**Settled:** 24 Aug 2026 · **On measurement, not preference**
+
+03 §5.2 specifies `prevalence x mean_severity x wishlist_proximity x
+addressability`. Severity is dropped; the formula becomes `prevalence x
+wishlist_proximity x addressability`.
+
+**Why.** Severity is the one field that failed validation on both statistics in
+both comparisons:
+
+| Comparison | kappa | AC1 | observed | n |
+|---|---|---|---|---|
+| human vs lane A | 0.239 | 0.481 | 60.6% | 33 |
+| lane A vs lane C | 0.327 | 0.458 | 61.1% | 193 |
+
+**The second row is the decisive one.** Two independent models - different
+vendors, different families, no shared prompt or lineage - agree on 61% of
+severity judgements. A miscalibrated classifier is repaired by a better prompt.
+A field that two independent readers cannot agree on is not determined by the
+evidence: a short review says WHAT went wrong far more reliably than it says
+whether the speaker carried on anyway, changed what they did, or left for good.
+
+This was checked at n=96 and again at n=193 after extending lane C, and the
+figures held - so it is not small-sample noise.
+
+**Why removal rather than a re-run.** The obvious remedy under 04 §7 is to fix
+the prompt, bump classifier_version and re-run the corpus. That would cost ~1.5
+days against a 500 request/day budget, and the model-vs-model evidence says it
+would not work, because the disagreement is not lane A's alone.
+
+**What is kept.** Severity is still classified, still emitted per row, and still
+orders the verbatims - a severity-3 quote is still the one that belongs on a
+slide. It simply does not weight the index, because multiplying an unreliable
+factor into a ranking propagates noise while looking like precision.
+
+`include_severity: false` in `taxonomy.yaml` makes this switchable, and
+`oi_includes_severity` is recorded on every emitted row, so any reader can ask
+for the other version.
+
+---
+
 ### B1 · LLM routing decided from token arithmetic, not vendor speed claims
 **Settled:** 21 Aug 2026
 

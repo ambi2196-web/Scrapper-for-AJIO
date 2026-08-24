@@ -206,8 +206,54 @@ severity:
 # which is the property the whole index depends on. Every other source is a
 # robustness check — where the ranking flips, that flip is itself a finding
 # about which population is being heard.
+# AMENDED 24 Aug 2026. The OA definitions above are UNCHANGED, so every label
+# already written stays valid and taxonomy_version stays tax_v1 - the reference
+# source is an aggregation-time choice, not part of the classification contract.
+#
+# reference_source was pdp_qa, per 03 §5.2, because product-page Q&A is
+# pre-purchase BY CONSTRUCTION. That surface does not exist: AJIO publishes no
+# PDP reviews or Q&A (D3-OUTCOME). No pre-purchase-by-construction surface
+# remains, so the index is anchored to Play pre_purchase instead - where stance
+# is INFERRED by the classifier rather than guaranteed by the surface.
+#
+# That is a weaker claim and must be stated as one. What makes it defensible at
+# all is that temporal_stance is the best-validated field in the engine:
+# kappa 0.851 / AC1 0.985 against the human gold set, 98.6% observed agreement.
+# The index rests on the field that survived validation most convincingly.
+#
+# Play rather than appstore because it is 12x the volume (6,985 vs 867
+# utterances) and the App Store's ~500-row pagination ceiling already bars
+# Myntra from that surface's comparison.
 opportunity_index:
-  reference_source: pdp_qa
+  reference_source: play
   reference_stance: pre_purchase
-  formula: "prevalence x mean_severity x wishlist_proximity x addressability"
+  reference_source_original: pdp_qa
+  reference_source_changed_reason: "AJIO publishes no PDP reviews or Q&A; see D3-OUTCOME and D8"
+  formula: "prevalence x wishlist_proximity x addressability"
   gated_by: detectability
+
+  # SEVERITY REMOVED FROM THE INDEX - 24 Aug 2026, on measurement not preference.
+  #
+  # 03 §5.2 specifies prevalence x mean_severity x wishlist_proximity x
+  # addressability. Severity is dropped because it is the one field that failed
+  # validation on BOTH statistics in BOTH comparisons:
+  #
+  #   human vs lane A    kappa 0.239  AC1 0.481  observed 60.6%
+  #   lane A vs lane C   kappa 0.327  AC1 0.458  observed 61.1%   (n=193)
+  #
+  # The second line is the decisive one. Two independent models, different
+  # vendors, no shared prompt or lineage, agree on 61% of severity judgements.
+  # A miscalibrated classifier is fixed by a better prompt; a field two
+  # independent readers cannot agree on is not determined by the evidence. A
+  # short review says WHAT went wrong far more reliably than whether the speaker
+  # carried on, changed course, or left for good.
+  #
+  # Multiplying an unreliable factor into the index would propagate that noise
+  # into every ranking while looking like precision. Severity is still computed,
+  # still emitted per row, and still used to order verbatims - it just does not
+  # weight the index.
+  include_severity: false
+  severity_excluded_reason: >
+    Fails the reliability gate on both kappa and AC1, and in the model-vs-model
+    comparison as well as against human labels - so it is a property of the
+    evidence rather than of the classifier. See D9 in docs/decisions.md.

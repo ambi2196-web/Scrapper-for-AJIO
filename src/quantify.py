@@ -138,7 +138,9 @@ def aggregate(group_keys: list[str] | None = None) -> Any:
     sev = (df.groupby(keys)["severity"].mean().rename("severity_mean").reset_index())
     merged = merged.merge(sev, on=keys, how="left")
 
-    merged["oi"] = merged.apply(_opportunity_index, axis=1)
+    include_severity = bool(oi_cfg.get("include_severity", True))
+    merged["oi"] = merged.apply(lambda r: _opportunity_index(r, include_severity), axis=1)
+    merged["oi_includes_severity"] = include_severity
     merged["gate_reason"] = merged.apply(_gate_reason, axis=1)
 
     min_cell = threshold("statistics.min_cell_n_for_reporting", required=False)
@@ -154,7 +156,7 @@ def aggregate(group_keys: list[str] | None = None) -> Any:
     return merged
 
 
-def _opportunity_index(row: Any) -> float | None:
+def _opportunity_index(row: Any, include_severity: bool = True) -> float | None:
     """oi = prevalence x mean_severity x wishlist_proximity x addressability (03 §5.2).
 
     Null - not zero - when any input is gated. Returning null rather than a
@@ -170,18 +172,28 @@ def _opportunity_index(row: Any) -> float | None:
         return None
     if row.get("proportion") is None or row.get("proximity_weight") is None:
         return None
-    if row.get("severity_mean") is None or row["severity_mean"] != row["severity_mean"]:
-        return None
     addressability = row.get("addressability")
     if addressability is None:
         return None
-    return round(
+
+    value = (
         float(row["proportion"])
-        * float(row["severity_mean"])
         * float(row["proximity_weight"])
-        * float(addressability),
-        6,
+        * float(addressability)
     )
+
+    # Severity multiplies in only when it passed validation. It did not: two
+    # independent models from different vendors agree on 61% of severity
+    # judgements (AC1 0.458), and the human comparison agrees. Multiplying an
+    # unreliable factor into the index propagates that noise into every ranking
+    # while looking like precision. See D9.
+    if include_severity:
+        sev = row.get("severity_mean")
+        if sev is None or sev != sev:
+            return None
+        value *= float(sev)
+
+    return round(value, 6)
 
 
 def _gate_reason(row: Any) -> str | None:
