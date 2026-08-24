@@ -74,7 +74,23 @@ def observed_windows(labelled: Any | None = None) -> dict[tuple[str, str], float
     df = labelled.dropna(subset=["posted_at"]).copy()
     if df.empty:
         return {}
-    df["_ts"] = pd.to_datetime(df["posted_at"], errors="coerce", utc=True)
+    # format="mixed" is load-bearing. Without it pandas infers ONE format from
+    # the first non-null value and coerces everything else to NaT. This corpus
+    # mixes tz-aware App Store stamps ("...T06:24:56-07:00") with naive Play ones
+    # ("...T12:31:24"), so inference locked onto the tz-aware form and silently
+    # discarded all 11,964 Play rows - 84% of the corpus - leaving Play with no
+    # observed window, the parity gate with nothing to check, and the Play
+    # differential with no ratios at all. Nothing raised.
+    df["_ts"] = pd.to_datetime(df["posted_at"], errors="coerce", utc=True, format="mixed")
+
+    # A large coercion rate means the parse is wrong, not that the data is bad.
+    coerced = int(df["_ts"].isna().sum())
+    if coerced and coerced / len(df) > 0.05:
+        raise ValueError(
+            f"{coerced} of {len(df)} posted_at values ({coerced / len(df):.0%}) failed to "
+            "parse. Above 5% this is a format problem rather than missing data, and "
+            "silently dropping them would remove whole sources from the window check."
+        )
     df = df.dropna(subset=["_ts"])
     spans = df.groupby(["source", "brand"])["_ts"].agg(["min", "max"])
     return {
@@ -164,7 +180,13 @@ def run(aggregates: Any | None = None) -> Any:
 
         p_ajio = x_ajio / n_ajio if n_ajio else None
         p_pool = x_pool / n_pool if n_pool else None
-        gated = focal["gate_reason"].iloc[0]
+        # pd.isna, NOT `is None`. An ungated row carries NaN here, not None, so
+        # `gated is None` was False for every ungated row and the ratio was never
+        # computed - emptying the differential entirely while every other column
+        # looked correct. The comparison is the engine's most credible output
+        # (03 §5.3), and it failed silently.
+        _gate = focal["gate_reason"].iloc[0]
+        gated = None if pd.isna(_gate) else _gate
 
         test = two_proportion(x_ajio, n_ajio, x_pool, n_pool)
         rows.append({

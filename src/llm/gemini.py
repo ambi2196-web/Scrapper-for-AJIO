@@ -23,7 +23,11 @@ _RETRYABLE_MARKERS = (
 # returned and a stage that sat there for 22 minutes producing nothing and
 # printing nothing. A finite timeout turns that into a retryable error, which
 # the router already knows how to handle.
-REQUEST_TIMEOUT_MS = 120_000
+# 60s. Observed call latency is ~7s, so anything past a minute is stuck rather
+# than slow. Note the wall-clock latency in the ledger can far exceed this when
+# the machine suspends mid-request - the timeout governs active time, not
+# elapsed time, so a laptop sleeping still shows as a multi-hour entry.
+REQUEST_TIMEOUT_MS = 60_000
 
 
 def _client() -> Any:
