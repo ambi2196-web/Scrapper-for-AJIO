@@ -374,6 +374,37 @@ def consolidate() -> dict[str, Any]:
     b = pd.DataFrame(list(_read_lane("B")))
     c = pd.DataFrame(list(_read_lane("C")))
 
+    # DEDUPE ON READ. The shards are append-only, and two classify processes
+    # running against the same shard - which happened on 24 Aug when a stalled
+    # run survived a kill and a second was started alongside it - both append
+    # labels for the same utterances. 1,906 ids ended up with up to four copies
+    # each, and 118 of them disagreed with themselves, because temperature 0
+    # constrains sampling without making a large model bit-exact.
+    #
+    # Every duplicate inflates a denominator, so the error runs through every
+    # proportion in the engine while nothing looks wrong.
+    #
+    # First occurrence wins. That matches the resumable design's promise - once
+    # an utterance is labelled it is never re-labelled - and it is deterministic,
+    # so two people running consolidate on the same shard get the same table.
+    # The shard itself is left untouched: it is the audit record, and dropping
+    # rows from it would destroy the evidence that this happened.
+    duplicate_report: dict[str, Any] = {}
+    for name, frame in (("A", a), ("B", b), ("C", c)):
+        if frame.empty:
+            continue
+        before = len(frame)
+        frame.drop_duplicates(subset="utterance_id", keep="first", inplace=True)
+        if before != len(frame):
+            duplicate_report[name] = {"rows_read": before, "kept": len(frame),
+                                      "duplicates_dropped": before - len(frame)}
+    if duplicate_report:
+        LOGS.mkdir(parents=True, exist_ok=True)
+        with (LOGS / "s5_duplicates.jsonl").open("a", encoding="utf-8", newline=chr(10)) as fh:
+            fh.write(json.dumps({"at": now_ist(), "lanes": duplicate_report,
+                                 "policy": "first occurrence wins; shard left intact"},
+                                ensure_ascii=False) + chr(10))
+
     merged = a.set_index("utterance_id")
     if not b.empty:
         merged.update(b.set_index("utterance_id"))
@@ -403,8 +434,11 @@ def consolidate() -> dict[str, Any]:
         "stage": "S5",
         "rows": len(merged),
         "lane_a": len(a), "lane_b": len(b), "lane_c": len(c),
+        "duplicates_dropped": duplicate_report or None,
         "escalated": int(merged["escalated"].sum()),
-        "path": str(out.relative_to(ROOT)),
+        # Repo-relative when possible; tests point LABELLED at a tmp dir outside
+        # the repo, and a hard relative_to would raise there.
+        "path": str(out.relative_to(ROOT)) if str(out).startswith(str(ROOT)) else str(out),
     }
 
 

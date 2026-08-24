@@ -1,6 +1,6 @@
 # Verbatims
 
-_Generated 2026-08-24T15:51:15+05:30 by S9._
+_Generated 2026-08-24T21:03:45+05:30 by S9._
 
 Top quotes per opportunity area, ranked by severity then by confidence.
 Every quote is an exact substring of the utterance it came from (invariant I3),
@@ -83,7 +83,7 @@ _The item was available when saved and is gone, or removed from the list, when t
 ## OA-03 — Size inconsistency across brands — cannot predict fit
 _The speaker cannot tell what size to order because sizing varies by brand or listing._
 
-**post_purchase** (22 utterances)
+**post_purchase** (21 utterances)
 
 - > wrong product size received. It seems like everything is worst here.
   — [play](https://play.google.com/store/apps/details?id=com.ril.ajio&reviewId=369d8e26-e756-4b39-989c-0dfdd0275bfe) · ajio · severity 3.0 · lang en · `db9addce3726`
@@ -111,7 +111,7 @@ _The speaker cannot tell what size to order because sizing varies by brand or li
 ## OA-04 — Quality vs. imagery mismatch
 _What arrived, or what the speaker fears will arrive, does not match the product photography._
 
-**post_purchase** (597 utterances)
+**post_purchase** (596 utterances)
 
 - > never trusting ajio again
   — [appstore](https://apps.apple.com/in/app/id1113425372) · ajio · severity 3.0 · lang en · `fc479df74abb`
@@ -315,7 +315,7 @@ _The speaker cannot establish when the item will arrive, or it arrived later tha
 ## OA-12 — Checkout / payment failure
 _The order did not complete: payment declined, cart emptied, checkout errored._
 
-**at_purchase** (209 utterances)
+**at_purchase** (208 utterances)
 
 - > payment doesn't happen...
   — [play](https://play.google.com/store/apps/details?id=com.ril.ajio&reviewId=77f6a1bc-af66-4803-83e3-8ad67dbc9b1a) · ajio · severity 3.0 · lang en · `4c2e333d3068`

@@ -300,6 +300,58 @@ def test_opportunity_index_reference_must_be_collectable():
     assert oi["reference_stance"] in {"pre_purchase", "at_purchase", "post_purchase"}
 
 
+def test_no_duplicate_labels_in_the_consolidated_table():
+    """One row per utterance. A duplicate inflates a denominator silently.
+
+    The shards are append-only, so two classify processes running against the
+    same shard both append labels for the same utterances. That happened on
+    24 Aug when a stalled run survived a kill and a second was started beside
+    it: 1,906 ids ended up with up to four copies each, and 118 disagreed with
+    themselves because temperature 0 does not make a large model bit-exact.
+
+    Every duplicate enlarges a denominator, so the error propagates through
+    every proportion the engine reports while nothing looks wrong. consolidate()
+    dedupes on read, first occurrence winning; this asserts it worked.
+    """
+    df = _load_parquet(DATA / "labelled" / "utterances.parquet")
+    dupes = int(len(df) - df["utterance_id"].nunique())
+    assert dupes == 0, (
+        f"{dupes} duplicate utterance_id rows in the consolidated table. "
+        "Each one inflates a denominator."
+    )
+
+
+def test_consolidate_dedupes_a_shard_with_repeats(tmp_path, monkeypatch):
+    """Two writers appending the same id must yield one row, deterministically."""
+    pd = pytest.importorskip("pandas")
+
+    from src import classify
+
+    shard = tmp_path / "labels_lane_A.jsonl"
+    base = {
+        "classifier_version": classify.CLASSIFIER_VERSION, "source": "play",
+        "brand": "ajio", "temporal_stance": "post_purchase", "severity": 2,
+    }
+    rows = [
+        {**base, "utterance_id": "u1", "opportunity_area": "OA-06"},
+        {**base, "utterance_id": "u1", "opportunity_area": "OA-07"},  # disagrees
+        {**base, "utterance_id": "u2", "opportunity_area": "OA-11"},
+    ]
+    shard.write_text(
+        chr(10).join(json.dumps(r) for r in rows) + chr(10), encoding="utf-8"
+    )
+    monkeypatch.setattr(classify, "_shard_path", lambda lane: shard if lane == "A" else tmp_path / f"absent_{lane}.jsonl")
+    monkeypatch.setattr(classify, "LABELLED", tmp_path)
+
+    result = classify.consolidate()
+    assert result["rows"] == 2, "duplicate id should collapse to one row"
+    assert result["duplicates_dropped"]["A"]["duplicates_dropped"] == 1
+
+    out = pd.read_parquet(tmp_path / "utterances.parquet")
+    kept = out[out["utterance_id"] == "u1"]["opportunity_area"].iloc[0]
+    assert kept == "OA-06", "first occurrence must win, so the result is reproducible"
+
+
 # --------------------------------------------------------------------------
 # T5 - threshold guard
 # --------------------------------------------------------------------------
