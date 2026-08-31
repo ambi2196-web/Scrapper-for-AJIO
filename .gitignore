@@ -11,10 +11,17 @@
 data/raw/*
 data/interim/*
 data/labelled/*
-# All hand-labelling working files. The template carries 100 rows of
-# scraped review text, which is working data rather than a deliverable -
-# only data/out/ and the dashboard snapshot ship (see B5).
-data/gold/*.csv
+# All hand-labelling working files, by SHAPE rather than by extension.
+# `data/gold/*.csv` was the first attempt and it leaked: the labelled sheet
+# arrived as .xlsx and was tracked for eight days. Ignoring the directory
+# contents catches whatever format the next one shows up in.
+#
+# These carry 100 rows of scraped review text - working data, not a
+# deliverable. Only data/out/ and the dashboard snapshot ship (see B5).
+# CODEBOOK.md is exempt: it is generated documentation with no corpus text.
+data/gold/*
+!data/gold/.gitkeep
+!data/gold/CODEBOOK.md
 logs/deferred/
 logs/*.jsonl
 
