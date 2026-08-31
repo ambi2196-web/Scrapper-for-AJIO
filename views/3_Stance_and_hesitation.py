@@ -133,46 +133,41 @@ st.caption("Marker size is mean severity. Dotted lines are medians, not threshol
            "they orient the eye and carry no decision rule.")
 
 # --- hesitation markers -----------------------------------------------------
-if not ev.empty and "hesitation_marker" in ev.columns:
-    st.subheader("Explicit decision language")
-    st.markdown(
-        "`hesitation_marker` is set only where the speaker is visibly weighing, deferring or "
-        "abandoning a purchase in the text itself. It is a stricter signal than stance: stance "
-        "says *when* they spoke, this says they were **audibly undecided while speaking**."
-    )
-    sub = ev[(ev["source"] == source) & (ev["brand"] == brand)]
-    if not sub.empty:
-        hes = (sub.groupby("opportunity_area")["hesitation_marker"]
-               .agg(["mean", "sum", "count"]).reset_index()
-               .rename(columns={"mean": "rate", "sum": "n_marked", "count": "n"}))
-        hes = hes[hes["n"] >= 5].sort_values("rate", ascending=True)
-        if not hes.empty:
-            hes["label"] = hes["opportunity_area"].map(lambda c: f"{c} · {names.get(c, '')}".strip(" ·"))
-            fig3 = go.Figure(go.Bar(
-                y=hes["label"], x=hes["rate"], orientation="h", marker_color="#111827",
-                customdata=hes[["n_marked", "n"]].values,
-                hovertemplate=("<b>%{y}</b><br>%{x:.0%} carry explicit decision language<br>"
-                               "%{customdata[0]:.0f} of %{customdata[1]:.0f}<extra></extra>"),
-            ))
-            fig3.update_layout(
-                height=max(280, 38 * len(hes)),
-                xaxis=dict(title="share with an explicit hesitation marker",
-                           tickformat=".0%", gridcolor="#EEF1F7"),
-                yaxis=dict(title=""), plot_bgcolor="white", paper_bgcolor="white",
-                margin=dict(l=10, r=30, t=20, b=40), font=dict(size=13),
-            )
-            st.plotly_chart(fig3, use_container_width=True)
-            st.caption("Areas with fewer than 5 utterances are omitted — a rate on 3 rows is noise.")
+st.subheader("Explicit decision language — SUPPRESSED, and why")
+st.error(
+    "**`hesitation_marker` rates are not reported.** The classifier flags hesitation "
+    "on 16.8% of the corpus and 48.5% of pre-purchase utterances. A human reading a "
+    "100-utterance sample confirmed **none** of the 16 the classifier flagged there — "
+    "precision 0/16."
+)
+st.markdown("""
+Inspecting the false positives shows what the classifier is doing: it reads
+*\"Don't ever buy from this pathetic app\"*, *\"Not gonna trust these people\"* and
+*\"Would not recommend\"* as hesitation. Those are warnings to other shoppers and
+statements of future refusal — not a speaker weighing or deferring a purchase.
+It is detecting negative sentiment and labelling it deliberation.
 
-    lang = ev[(ev["source"] == source)]
-    if not lang.empty and "language" in lang.columns:
-        with st.expander("Language mix — why Hinglish is never translated"):
-            counts = lang["language"].value_counts()
-            st.bar_chart(counts)
-            st.markdown(
-                "Hinglish is preserved exactly as written. Translating it would normalise "
-                "phrasing like *\"lu ya nahi\"* into *\"should I buy it\"* — grammatically "
-                "equivalent, but the first is a much stronger deferral signal, because "
-                "nobody writes it while confident. No translate call exists anywhere in the "
-                "codebase, and a test asserts that."
-            )
+**The absence is itself the finding.** Explicit decision language — *\"was about to
+order\"*, *\"waiting for the sale\"*, *\"lena chahiye ya nahi\"* — is near-absent from
+app-store reviews, and that is exactly what the surface predicts. People write
+reviews *after* something happened to them. Deliberation happens before, in
+private, and leaves no trace here.
+
+This is the same structural blindness that gates OA-09 and OA-10, arriving through
+a different door: the pre-purchase moment is not narrated on retrospective
+surfaces. Reporting a hesitation rate from this corpus would have put a
+four-figure number behind a signal the evidence does not support.
+""")
+
+lang = ev[(ev["source"] == source)]
+if not lang.empty and "language" in lang.columns:
+    with st.expander("Language mix — why Hinglish is never translated"):
+        counts = lang["language"].value_counts()
+        st.bar_chart(counts)
+        st.markdown(
+            "Hinglish is preserved exactly as written. Translating it would normalise "
+            "phrasing like *\"lu ya nahi\"* into *\"should I buy it\"* — grammatically "
+            "equivalent, but the first is a much stronger deferral signal, because "
+            "nobody writes it while confident. No translate call exists anywhere in the "
+            "codebase, and a test asserts that."
+        )

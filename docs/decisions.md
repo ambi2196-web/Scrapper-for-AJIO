@@ -374,6 +374,40 @@ not need re-labelling; lane B only supplements.
 
 ---
 
+### D11 · Hesitation-marker figures suppressed; the absence is the finding
+**Settled:** 31 Aug 2026 · **On measurement**
+
+The classifier flags `hesitation_marker` on 16.8% of the corpus and on 48.5% of
+pre-purchase utterances. A human read a 100-utterance sample and confirmed
+**none** of the 16 the classifier flagged there. Precision 0/16.
+
+The false positives show the mechanism. The classifier reads "Don't ever buy from
+this pathetic app", "Not gonna trust these people" and "Would not recommend" as
+hesitation. Those are warnings to other shoppers and statements of future
+refusal - not a speaker weighing or deferring a purchase. It is detecting
+negative sentiment and labelling it deliberation.
+
+**No hesitation rate is reported anywhere.** The dashboard section that showed
+them now shows this finding instead.
+
+**The absence is itself a result, and it belongs on the blind-spot register.**
+Explicit decision language - "was about to order", "waiting for the sale",
+"lena chahiye ya nahi" - is near-absent from app-store reviews, which is exactly
+what the surface predicts. People write reviews AFTER something happened to them;
+deliberation happens before, in private, and leaves no trace there.
+
+This is the same structural blindness that gates OA-09 and OA-10, arriving
+through a different door. It also explains why 04 §3's hesitation lexicon, built
+in good faith, found so little: the lexicon is fine, the surface is wrong for it.
+
+**Kappa is not reported for this field** because the human column is constant,
+which makes it undefined. Precision is the answerable quantity and is reported
+instead. `validate check-gold` treats a constant `hesitation_marker` as a warning
+rather than an error for the same reason - a human marking none of 100 rows is a
+result, not a lapse.
+
+---
+
 ### B1 · LLM routing decided from token arithmetic, not vendor speed claims
 **Settled:** 21 Aug 2026
 

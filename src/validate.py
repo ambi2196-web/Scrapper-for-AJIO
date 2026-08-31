@@ -507,20 +507,33 @@ def check_gold(path: Any = None) -> dict[str, Any]:
                 "severity grades a friction, and none means none was identified"
             )
 
-    # Zero variance in a field makes it useless for kappa: a constant column
-    # agrees with everything by chance, so the statistic is undefined.
-    for col in ("opportunity_area", "temporal_stance", "severity", "hesitation_marker"):
+    # Zero variance makes kappa undefined, but for hesitation_marker that is a
+    # FINDING rather than a defect: explicit decision language is genuinely
+    # near-absent from retrospective review text, so a human reading 100 rows
+    # and marking none of them is a result, not a lapse. It is surfaced as a
+    # warning so it reaches the appendix without blocking the gate.
+    warnings: list[str] = []
+    for col in ("opportunity_area", "temporal_stance", "severity"):
         if col in df.columns and df[col].dropna().nunique() <= 1:
             problems.append(
                 f"{col} has a single value across every row. Kappa is undefined on a "
                 "constant column - expected agreement is 1.0."
             )
+    if "hesitation_marker" in df.columns and df["hesitation_marker"].dropna().nunique() <= 1:
+        only = str(df["hesitation_marker"].dropna().iloc[0]) if len(df["hesitation_marker"].dropna()) else "?"
+        warnings.append(
+            f"hesitation_marker is {only} on every row, so kappa is undefined for it. "
+            "Treated as a finding rather than an error: if no utterance in the sample "
+            "shows a speaker weighing or deferring a purchase, that is what the corpus "
+            "contains. Reported as precision against the classifier instead."
+        )
 
     return {
         "path": str(path),
         "rows": int(len(df)),
         "valid": not problems,
         "problems": problems,
+        "warnings": warnings,
         "expected": {
             "opportunity_area": sorted(valid_area),
             "temporal_stance": sorted(valid_stance),
@@ -606,6 +619,30 @@ def human_vs_model() -> dict[str, Any]:
         result["per_field"][field] = agreement(
             joined[field].tolist(), joined[model_col].tolist(), weights
         )
+    # hesitation_marker gets precision, not kappa. With the human column constant
+    # at False, kappa is undefined - but the quantity that matters is still
+    # answerable: of the rows the CLASSIFIER flagged, how many did the human
+    # confirm? That is precision, and it is the number that decides whether any
+    # hesitation figure can be reported.
+    if "hesitation_marker" in joined.columns:
+        h_col = "hesitation_marker_model" if "hesitation_marker_model" in joined.columns else "hesitation_marker"
+        human_h = joined["hesitation_marker"].astype(str).str.lower().isin(["true", "1", "yes"])
+        model_h = joined[h_col].fillna(False).astype(bool) if h_col != "hesitation_marker" else human_h
+        flagged = int(model_h.sum())
+        confirmed = int((model_h & human_h).sum())
+        result["hesitation_marker"] = {
+            "model_flagged": flagged,
+            "human_confirmed": confirmed,
+            "precision": round(confirmed / flagged, 4) if flagged else None,
+            "human_positives": int(human_h.sum()),
+            "kappa": None,
+            "note": (
+                "Kappa is undefined because the human column is constant. Precision is "
+                "the answerable quantity: of the utterances the classifier flagged as "
+                "hesitation, this share was confirmed by a human reading the same text."
+            ),
+        }
+
     result.update(apply_gate(result["per_field"]))
     _log("s6_human_vs_model", result)
     return result

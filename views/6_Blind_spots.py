@@ -130,7 +130,27 @@ The consequence is recorded rather than worked around. Where severity enters the
 opportunity index it is flagged, and the reliability figures travel with it.
 """)
 
-st.subheader("5 · Limits of the method as a whole")
+st.subheader("5 · Deliberation leaves no trace on these surfaces")
+st.markdown("""
+The engine set out to detect **explicit decision language** — someone weighing,
+deferring or abandoning a purchase in their own words. It found almost none, and
+what it did flag did not survive checking.
+
+The classifier marked `hesitation_marker` on 16.8% of the corpus. A human read a
+100-utterance sample and confirmed **none of the 16** flagged there. Inspecting
+them shows why: *"Don't ever buy from this app"*, *"Not gonna trust these
+people"*, *"Would not recommend"* — warnings to other shoppers and statements of
+future refusal, not deliberation. The classifier was detecting negative sentiment
+and calling it hesitation.
+
+So no hesitation rate is reported. **The absence is the finding**: people write
+reviews *after* something happens to them, and the moment of weighing a purchase
+happens before, in private. It is the same blindness that gates OA-09 and OA-10,
+reached by a different route — and it is the clearest single argument for why
+interviews are necessary rather than merely complementary.
+""")
+
+st.subheader("6 · Limits of the method as a whole")
 st.markdown("""
 **People who never say anything.** Every source here is a record of someone who
 chose to write. The shopper who added an item to a wishlist, forgot about it and
