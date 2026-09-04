@@ -115,16 +115,28 @@ if not agg.empty:
 
 # --- structural limits ------------------------------------------------------
 st.subheader("4 · Severity is not reliably adjudicable from short review text")
-st.markdown("""
+_mm_obs = da.stat("model", "severity", "observed_agreement")
+if _mm_obs is None:
+    st.info("Severity reliability has not been computed yet — run `validate model-kappa`.")
+else:
+    st.markdown(f"""
 Measured, not assumed. Two independent models — Gemini 3.5 Flash-Lite and Groq
-`gpt-oss-120b`, sharing no prompt and no lineage — agree on only **57% of
-severity judgements** (AC1 0.394). Against the human gold set the figure is
-similar (AC1 0.481, κ 0.239).
+`gpt-oss-120b`, sharing no prompt and no lineage — agree on only **{_mm_obs:.0%} of
+severity judgements** (AC1 {da.fmt_stat("model", "severity", "ac1")}, κ
+{da.fmt_stat("model", "severity", "kappa")}).
 
 A field that two independent readers cannot agree on is not a miscalibrated
 classifier that a better prompt would fix. It is a field the evidence does not
 determine: a short review says *what* went wrong far more reliably than it says
 whether the speaker carried on anyway, changed what they did, or left for good.
+
+**The human comparison does not corroborate this as strongly**, and the weaker
+claim is the one that gets stated. Against the hand-labelled sample severity
+reaches AC1 {da.fmt_stat("human", "severity", "ac1")} (κ
+{da.fmt_stat("human", "severity", "kappa")}) — better than the two models manage
+with each other. So the finding rests on the model-vs-model disagreement alone,
+on n={da.stat("human", "severity", "n")} human-labelled rows, which is too few to
+settle it either way.
 
 The consequence is recorded rather than worked around. Where severity enters the
 opportunity index it is flagged, and the reliability figures travel with it.

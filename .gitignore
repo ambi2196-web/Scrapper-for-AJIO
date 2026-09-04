@@ -46,3 +46,6 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# --- local tooling ---
+.claude/

@@ -12,8 +12,6 @@ import pathlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-import json
-
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -23,15 +21,14 @@ from dashboard import data_access as da
 st.title("Method & reliability")
 
 ROOT = da.ROOT
-LOGS = ROOT / "logs"
 
 
-def _last_jsonl(name: str) -> dict:
-    path = LOGS / name
-    if not path.exists():
-        return {}
-    lines = [l for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
-    return json.loads(lines[-1]) if lines else {}
+# Every report on this page comes through data_access, which reads the committed
+# snapshot before it reads logs/. logs/ is gitignored, so a page that reads it
+# directly renders fully for whoever ran the pipeline and blank for everyone
+# else - the failure mode this page is least able to afford.
+def _report(name: str) -> dict:
+    return da.report(name)
 
 
 # --------------------------------------------------------------------------
@@ -43,7 +40,7 @@ tab_kappa, tab_drops, tab_pipeline, tab_quota = st.tabs(
 with tab_kappa:
     st.subheader("Two independent reliability numbers")
     st.markdown("""
-**1 · Model vs model.** Lane A (Gemini 2.5 Flash-Lite) against lane C (Groq
+**1 · Model vs model.** Lane A (Gemini 3.5 Flash-Lite) against lane C (Groq
 `gpt-oss-120b`), each labelling the same utterances independently. Lane C never
 sees lane A's output — a "please check this label" framing would produce
 agreement bias and inflate κ while measuring nothing.
@@ -61,8 +58,8 @@ the reweighting, κ would *understate* agreement — the wrong direction of erro
 publish.
 """)
 
-    human = _last_jsonl("s6_human_vs_model.jsonl")
-    model = _last_jsonl("s6_model_vs_model.jsonl")
+    human = _report("s6_human_vs_model")
+    model = _report("s6_model_vs_model")
 
     if not human and not model:
         st.info(
@@ -165,7 +162,7 @@ with tab_drops:
         "advertised review count."
     )
 
-    s4 = _last_jsonl("s4_report.jsonl")
+    s4 = _report("s4_report")
     if not s4:
         st.info("No drop log yet. Run `python -m src.cli filter`.")
     else:
@@ -201,7 +198,7 @@ with tab_drops:
                 rows.append(row)
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-    s2 = _last_jsonl("s2_report.jsonl")
+    s2 = _report("s2_report")
     if s2:
         st.markdown("**Language mix and `posted_at` coverage**")
         c1, c2 = st.columns(2)
@@ -264,32 +261,26 @@ with tab_quota:
     st.markdown("""
 | Lane | Provider / model | Role | Binding limit |
 |---|---|---|---|
-| **A** | Gemini 2.5 Flash-Lite | bulk classification, full corpus | 1,500 requests/day |
-| **B** | Gemini 2.5 Flash | escalation where confidence < τ, one utterance per call | 1,500 requests/day |
+| **A** | Gemini 3.5 Flash-Lite | bulk classification, full corpus | **500 requests/day** |
+| **B** | Gemini 3.5 Flash | escalation where confidence < τ, one utterance per call | 100 requests/day (held low; unverified) |
 | **C** | Groq `gpt-oss-120b` | blind second annotator, stratified sample | **200,000 tokens/day** |
 
 The routing was decided from the token arithmetic, not from vendor speed claims.
 At a batch of 20, one call is roughly 3,000 tokens — more than a third of Groq's
 entire 8,000-token *per-minute* free budget, which drops the effective rate to
-about two requests a minute and caps the day at ~1,300 utterances. Gemini's free
-tier does twenty to forty times that. So Groq is not the bulk classifier, and
-building it as one would have failed on the first afternoon.
+about two requests a minute and caps the day at ~1,300 utterances. Lane A at
+500 requests a day and a batch of 20 does roughly 10,000 — about eight times
+that, on the ceiling the provider's own 429 reported rather than the one its
+documentation advertises. So Groq is not the bulk classifier, and building it as
+one would have failed on the first afternoon.
 """)
 
-    ledger = LOGS / "llm_ledger.jsonl"
-    if ledger.exists():
-        rows = [json.loads(l) for l in ledger.read_text(encoding="utf-8").splitlines() if l.strip()]
-        if rows:
-            df = pd.DataFrame(rows)
-            df["tokens"] = df.get("prompt_tokens", 0).fillna(0) + df.get("completion_tokens", 0).fillna(0)
-            summary = (df.groupby(["lane", "provider", "model"])
-                       .agg(calls=("outcome", "size"),
-                            ok=("outcome", lambda s: (s == "ok").sum()),
-                            tokens=("tokens", "sum"),
-                            median_latency=("latency_s", "median"),
-                            rate_limit_wait=("rate_limit_wait_s", "sum"))
-                       .reset_index())
-            st.dataframe(summary, use_container_width=True, hide_index=True)
-            st.caption("Every call is logged: provider, model, tokens, latency, attempt, outcome, cost=0.")
+    summary = da.ledger_summary()
+    if not summary.empty:
+        st.dataframe(summary, use_container_width=True, hide_index=True)
+        st.caption(
+            "Every call is logged: provider, model, tokens, latency, attempt, outcome, cost=0. "
+            "The per-call ledger stays local; this is its per-lane summary."
+        )
     else:
         st.info("No LLM calls logged yet. `python -m src.cli quota` prints live quota state.")

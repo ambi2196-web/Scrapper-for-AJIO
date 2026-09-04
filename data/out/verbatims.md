@@ -1,6 +1,6 @@
 # Verbatims
 
-_Generated 2026-08-31T11:52:12+05:30 by S9._
+_Generated 2026-09-05T03:41:25+05:30 by S9._
 
 Top quotes per opportunity area, ranked by severity then by confidence.
 Every quote is an exact substring of the utterance it came from (invariant I3),

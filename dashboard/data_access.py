@@ -90,13 +90,64 @@ def area_names() -> dict[str, str]:
 
 
 @st.cache_data(show_spinner=False)
-def kappa_report() -> dict[str, Any]:
-    """Latest human-vs-model kappa, if S6 has run."""
-    path = ROOT / "logs" / "s6_human_vs_model.jsonl"
+def _reports() -> dict[str, Any]:
+    path = DASHBOARD_DATA / "reports.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+@st.cache_data(show_spinner=False)
+def report(name: str) -> dict[str, Any]:
+    """A stage's latest summary line.
+
+    Snapshot first, local logs second. That order is the whole point: logs/ is
+    gitignored, so on a deployed clone the log fallback finds nothing. Reading
+    logs first would work perfectly on the machine that ran the pipeline and
+    silently render an empty page everywhere else - which is exactly how the
+    reliability page shipped for eight days announcing that no kappa had been
+    computed, four days after it had.
+    """
+    snap = _reports().get(name)
+    if snap:
+        return snap
+    path = ROOT / "logs" / f"{name}.jsonl"
     if not path.exists():
         return {}
     lines = [l for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
     return json.loads(lines[-1]) if lines else {}
+
+
+def kappa_report() -> dict[str, Any]:
+    """Latest human-vs-model kappa - the reliability gate."""
+    return report("s6_human_vs_model")
+
+
+def model_kappa_report() -> dict[str, Any]:
+    """Latest lane A vs lane C kappa - two independent annotators."""
+    return report("s6_model_vs_model")
+
+
+def ledger_summary() -> pd.DataFrame:
+    rows = _reports().get("llm_ledger_summary")
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+def stat(comparison: str, field: str, key: str) -> Any:
+    """One reliability figure, by name, for interpolation into prose.
+
+    Prose is where these numbers go stale. Three pages carried hand-typed kappas
+    from a 24 Aug run; a dedupe on 31 Aug moved every one of them and the
+    sentences kept the old values, because a number typed into a paragraph has
+    no way to know its source changed. Anything user-facing reads through here.
+    """
+    src = kappa_report() if comparison == "human" else model_kappa_report()
+    return ((src.get("per_field") or {}).get(field) or {}).get(key)
+
+
+def fmt_stat(comparison: str, field: str, key: str, spec: str = ".2f") -> str:
+    value = stat(comparison, field, key)
+    if value is None:
+        return "not yet computed"
+    return format(value, spec)
 
 
 # --------------------------------------------------------------------------

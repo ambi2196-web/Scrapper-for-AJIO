@@ -588,6 +588,88 @@ if any brand hit the scrape safety ceiling, because that truncates its window.
 
 ---
 
+### B12 · The reliability report ships with the dashboard snapshot
+
+**Status:** SETTLED 2026-09-05
+**Blocks:** nothing — this fixes a shipped defect.
+
+**The defect.** The hand-labelled sample was scored on 31 Aug and the gate
+computed. The deployed dashboard went on saying *"No kappa has been computed
+yet"* for five days afterwards. Nothing had failed: `logs/*.jsonl` is
+gitignored, the dashboard read the kappa report straight out of `logs/`, and so
+the page rendered completely on the machine that ran the pipeline and blank
+everywhere else. The Drop log and LLM budget tabs were empty on the deploy for
+the same reason, and had been since the app first went up.
+
+This is the worst shape a bug can take here: it is invisible to the person who
+built it, because their machine has the file. Only a reader sees it.
+
+**Decision.** `S9` writes `data/dashboard/reports.json` — the latest summary
+line of each stage report, plus a per-lane summary of the LLM ledger. The
+dashboard reads that snapshot **first** and falls back to `logs/` only for a
+local run. `views/` may not touch `logs/` at all; a test enforces it.
+
+**Reason this does not weaken B5.** B5 keeps the *corpus* out of a public repo:
+review text, ids, per-call prompts. `reports.json` is 8 KB of derived
+statistics — counts, rates, kappas, token totals. No review text, no reviewer
+names, no ids, and a test asserts no string in it exceeds 400 characters so a
+future report cannot start smuggling quotes in. The reliability figures are the
+evidence for every other number in the app; a validation the reader cannot see
+has not, from their side, been performed.
+
+**Enforced by:** `src/emit.py::_emit_reports_snapshot`,
+`dashboard/data_access.py::report`, and the tests
+`test_reliability_travels_with_the_deploy`,
+`test_dashboard_reads_the_snapshot_before_logs`,
+`test_reports_snapshot_carries_no_corpus_text`.
+
+---
+
+### B13 · Reliability figures are interpolated into prose, never typed
+
+**Status:** SETTLED 2026-09-05
+
+**The defect.** Three pages carried kappas written by hand from a 24 Aug run.
+The 31 Aug dedupe — which removed duplicate gold labels left by two concurrent
+writers — moved every one of them, and the sentences kept the old values:
+
+| Page | Said | Actually was |
+|---|---|---|
+| Overview | `temporal_stance` κ 0.71, AC1 0.97, 97% | κ 0.486, AC1 0.958, 96% |
+| Blind spots | severity, two models agree 57%, AC1 0.394 | 62%, AC1 0.466 |
+| Blind spots | severity vs human AC1 0.481, κ 0.239 | AC1 0.736, κ 0.597 |
+
+A number typed into a paragraph has no way to know its source changed. The
+figures were not wrong when written; they went wrong quietly, four days later,
+in a repo linked from the deck.
+
+**Decision.** Every user-facing statistic is interpolated through
+`data_access.stat()` / `fmt_stat()`, which read the report. A test fails the
+build if a κ or AC1 decimal appears literally in a view.
+
+**One claim changed, not just its digits.** Blind spot 4 said the human gold set
+corroborated that severity is unreliable. After the dedupe it does not — human
+vs model severity reaches AC1 0.736, better than the two models manage with each
+other. The finding now rests on the model-vs-model disagreement alone, on 50
+human-labelled severity rows, and the page says so.
+
+**Enforced by:** `test_no_reliability_figure_is_hardcoded_in_prose`.
+
+---
+
+### B14 · Append-only logs are read tolerantly
+
+**Status:** SETTLED 2026-09-05
+
+One line of the 2,575-row LLM ledger is a fragment — a 429 body split across two
+lines by two writers interleaving mid-append, the same concurrency that
+duplicated the gold labels. A strict reader turned that one torn line into a
+failed `emit`, taking down the entire snapshot including the reliability report,
+which has nothing to do with the ledger. `read_jsonl()` now skips unparseable
+lines and returns the count, which is printed rather than swallowed. A test
+fails if more than two lines are unparseable, because that is corruption rather
+than a torn append.
+
 ## Template
 
 ```

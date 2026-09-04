@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import random
+import re
 import subprocess
 import sys
 
@@ -718,6 +719,100 @@ def test_env_file_is_not_tracked():
     assert "data/gold/human_labels.csv" not in tracked, (
         "hand labels are working data, not a deliverable"
     )
+
+
+# --------------------------------------------------------------------------
+# The dashboard renders from what is committed, not from what is local
+# --------------------------------------------------------------------------
+
+def test_reliability_travels_with_the_deploy():
+    """The kappa report must be in the shipped snapshot, not only in logs/.
+
+    logs/ is gitignored, so for eight days the deployed dashboard announced that
+    no kappa had been computed while the hand-labelled sample sat scored on the
+    machine that ran it. A validation the reader cannot see has not, from their
+    side, been performed.
+    """
+    reports = ROOT / "data" / "dashboard" / "reports.json"
+    assert reports.exists(), "run `python -m src.cli emit` to write the snapshot"
+    payload = json.loads(reports.read_text(encoding="utf-8"))
+    human = payload.get("s6_human_vs_model")
+    assert human, "the human-vs-model kappa is missing from the shipped snapshot"
+    assert human.get("gate") in {"PASS", "FAIL"}, "the gate verdict must ship with it"
+    assert human.get("per_field"), "per-field kappas must ship - a blended one hides the weak field"
+
+
+def test_dashboard_reads_the_snapshot_before_logs():
+    """No view may read logs/ directly: it resolves locally and renders blank on deploy."""
+    offenders = []
+    for path in sorted((ROOT / "views").glob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if "LOGS /" in text or '"logs"' in text or "'logs'" in text:
+            offenders.append(path.name)
+    assert not offenders, (
+        f"{offenders} read logs/ directly. logs/ is gitignored, so this renders "
+        "for whoever ran the pipeline and is empty for every other reader. "
+        "Go through dashboard.data_access.report(), which reads the snapshot first."
+    )
+
+
+def test_no_reliability_figure_is_hardcoded_in_prose():
+    """Statistics in prose go stale silently.
+
+    Three pages carried kappas hand-typed from a 24 Aug run. A dedupe on 31 Aug
+    moved every one of them and the sentences kept the old values, because a
+    number typed into a paragraph has no way to know its source changed. They
+    are interpolated from the report now, and this test keeps them that way.
+    """
+    pattern = re.compile(r"(?:κ|kappa|AC1)\s*(?:=\s*)?0\.\d+", re.IGNORECASE)
+    offenders = []
+    for path in sorted((ROOT / "views").glob("*.py")):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                continue          # a comment may cite a historical figure
+            if "fmt_stat" in line or "da.stat" in line:
+                continue          # interpolated, which is the point
+            if pattern.search(line):
+                offenders.append(f"{path.name}:{lineno}: {line.strip()[:90]}")
+    assert not offenders, (
+        "hardcoded reliability figures found - interpolate them with "
+        "data_access.fmt_stat() so they cannot drift from the report: " + str(offenders)
+    )
+
+
+def test_reports_snapshot_carries_no_corpus_text():
+    """The snapshot ships derived statistics. A long free-text field would mean a
+    report had started embedding review text, which must not reach a public repo."""
+    reports = ROOT / "data" / "dashboard" / "reports.json"
+    if not reports.exists():
+        pytest.skip("no snapshot yet")
+
+    long_strings = []
+
+    def walk(node, path="$"):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                walk(v, f"{path}.{k}")
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                walk(v, f"{path}[{i}]")
+        elif isinstance(node, str) and len(node) > 400:
+            long_strings.append((path, len(node)))
+
+    walk(json.loads(reports.read_text(encoding="utf-8")))
+    assert not long_strings, f"unexpectedly long strings in the public snapshot: {long_strings[:3]}"
+
+
+def test_read_jsonl_survives_a_torn_line():
+    """One interleaved partial write must not take down the whole snapshot."""
+    from src import emit
+
+    path = ROOT / "logs" / "llm_ledger.jsonl"
+    if not path.exists():
+        pytest.skip("no ledger")
+    rows, skipped = emit.read_jsonl(path)
+    assert rows, "the ledger parsed to nothing"
+    assert skipped <= 2, f"{skipped} unparseable lines - that is corruption, not a torn append"
 
 
 def test_no_translate_call_exists_anywhere():

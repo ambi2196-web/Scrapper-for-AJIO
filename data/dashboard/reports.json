@@ -1,0 +1,282 @@
+{
+  "generated_at": "2026-09-05T03:41:26+05:30",
+  "s6_human_vs_model": {
+    "at": "2026-08-31T11:51:50+05:30",
+    "comparison": "human vs lane_A",
+    "n": 100,
+    "reweighted": false,
+    "per_field": {
+      "opportunity_area": {
+        "kappa": 0.4091,
+        "n": 100,
+        "observed_agreement": 0.56,
+        "expected_agreement": 0.2554,
+        "se": 0.0667,
+        "ci95": [
+          0.2784,
+          0.5397
+        ],
+        "band": "fair",
+        "ac1": 0.5256,
+        "ac1_band": "moderate",
+        "chance_agreement_gwet": 0.0725,
+        "kappa_paradox": false
+      },
+      "temporal_stance": {
+        "kappa": 0.4859,
+        "n": 100,
+        "observed_agreement": 0.96,
+        "expected_agreement": 0.9222,
+        "se": 0.2519,
+        "ci95": [
+          -0.0078,
+          0.9795
+        ],
+        "band": "moderate",
+        "ac1": 0.9584,
+        "ac1_band": "almost perfect",
+        "chance_agreement_gwet": 0.0386,
+        "kappa_paradox": true,
+        "paradox_note": "observed agreement 96.0% but kappa 0.486: one category dominates, so expected agreement is inflated. Read AC1 for this field."
+      },
+      "severity": {
+        "kappa": 0.5968,
+        "n": 50,
+        "observed_agreement": 0.8,
+        "expected_agreement": 0.504,
+        "se": 0.114,
+        "ci95": [
+          0.3732,
+          0.8203
+        ],
+        "band": "moderate",
+        "ac1": 0.7357,
+        "ac1_band": "substantial",
+        "chance_agreement_gwet": 0.2432,
+        "kappa_paradox": true,
+        "paradox_note": "observed agreement 80.0% but kappa 0.597: one category dominates, so expected agreement is inflated. Read AC1 for this field."
+      }
+    },
+    "hesitation_marker": {
+      "model_flagged": 16,
+      "human_confirmed": 0,
+      "precision": 0.0,
+      "human_positives": 0,
+      "kappa": null,
+      "note": "Kappa is undefined because the human column is constant. Precision is the answerable quantity: of the utterances the classifier flagged as hesitation, this share was confirmed by a human reading the same text."
+    },
+    "kappa_floor": 0.61,
+    "floor_source": "Landis & Koch (1977) - lower bound of the substantial-agreement band",
+    "failing_fields": [
+      "opportunity_area",
+      "temporal_stance",
+      "severity"
+    ],
+    "gate": "FAIL",
+    "gate_action": "Fields ['opportunity_area', 'temporal_stance', 'severity'] are below the floor. Fix the prompt, bump classifier_version, re-run the FULL corpus. Do not report these fields until they pass."
+  },
+  "s6_model_vs_model": {
+    "at": "2026-08-31T11:51:49+05:30",
+    "comparison": "lane_A_gemini vs lane_C_groq",
+    "n_overlap": 504,
+    "per_field": {
+      "opportunity_area": {
+        "kappa": 0.6298,
+        "n": 504,
+        "observed_agreement": 0.7599,
+        "expected_agreement": 0.3515,
+        "se": 0.0293,
+        "ci95": [
+          0.5723,
+          0.6873
+        ],
+        "band": "substantial",
+        "ac1": 0.7463,
+        "ac1_band": "substantial",
+        "chance_agreement_gwet": 0.0537,
+        "kappa_paradox": false
+      },
+      "temporal_stance": {
+        "kappa": 0.2739,
+        "n": 504,
+        "observed_agreement": 0.9187,
+        "expected_agreement": 0.888,
+        "se": 0.1087,
+        "ci95": [
+          0.0608,
+          0.4869
+        ],
+        "band": "fair",
+        "ac1": 0.9138,
+        "ac1_band": "almost perfect",
+        "chance_agreement_gwet": 0.0558,
+        "kappa_paradox": true,
+        "paradox_note": "observed agreement 91.9% but kappa 0.274: one category dominates, so expected agreement is inflated. Read AC1 for this field."
+      },
+      "severity": {
+        "kappa": 0.3484,
+        "n": 228,
+        "observed_agreement": 0.6184,
+        "expected_agreement": 0.4144,
+        "se": 0.0549,
+        "ci95": [
+          0.2408,
+          0.4561
+        ],
+        "band": "fair",
+        "ac1": 0.4661,
+        "ac1_band": "moderate",
+        "chance_agreement_gwet": 0.2853,
+        "kappa_paradox": false
+      }
+    },
+    "per_field_raw": {
+      "opportunity_area": {
+        "kappa": 0.6298,
+        "n": 504,
+        "observed_agreement": 0.7599,
+        "expected_agreement": 0.3515,
+        "se": 0.0293,
+        "ci95": [
+          0.5723,
+          0.6873
+        ],
+        "band": "substantial",
+        "ac1": 0.7463,
+        "ac1_band": "substantial",
+        "chance_agreement_gwet": 0.0537,
+        "kappa_paradox": false
+      },
+      "temporal_stance": {
+        "kappa": 0.5211,
+        "n": 504,
+        "observed_agreement": 0.7361,
+        "expected_agreement": 0.4489,
+        "se": 0.0356,
+        "ci95": [
+          0.4513,
+          0.5909
+        ],
+        "band": "moderate",
+        "ac1": 0.6768,
+        "ac1_band": "substantial",
+        "chance_agreement_gwet": 0.1836,
+        "kappa_paradox": false
+      },
+      "severity": {
+        "kappa": 0.3484,
+        "n": 228,
+        "observed_agreement": 0.6184,
+        "expected_agreement": 0.4144,
+        "se": 0.0549,
+        "ci95": [
+          0.2408,
+          0.4561
+        ],
+        "band": "fair",
+        "ac1": 0.4661,
+        "ac1_band": "moderate",
+        "chance_agreement_gwet": 0.2853,
+        "kappa_paradox": false
+      }
+    },
+    "note": "Two vendors' models as independent annotators. A second pass by the same model would agree with itself, which is not evidence."
+  },
+  "s4_report": {
+    "at": "2026-08-22T05:02:02+05:30",
+    "stage": "S4",
+    "utterances_in": 79199,
+    "kept": 42540,
+    "dropped": 36659,
+    "drop_rate": 0.4629,
+    "by_reason": {
+      "too_short": 36632,
+      "not_shopping": 3,
+      "near_dup": 23,
+      "no_text": 1
+    },
+    "by_source": {
+      "appstore": {
+        "total": 2992,
+        "dropped": {
+          "too_short": 625,
+          "not_shopping": 1
+        },
+        "drop_rate": 0.2092
+      },
+      "play": {
+        "total": 76207,
+        "dropped": {
+          "too_short": 36007,
+          "near_dup": 23,
+          "not_shopping": 2,
+          "no_text": 1
+        },
+        "drop_rate": 0.4728
+      }
+    },
+    "note": "This table goes in the appendix. The drop profile is itself a finding about each instrument."
+  },
+  "s2_report": {
+    "at": "2026-08-22T02:24:33+05:30",
+    "stage": "S2",
+    "rows_in": 62811,
+    "rows_out": 62811,
+    "near_duplicates_flagged": 33035,
+    "language_distribution": {
+      "en": 60353,
+      "hinglish": 1203,
+      "hi": 175,
+      "other": 1080
+    },
+    "posted_at_null_rate_by_source": {
+      "appstore": 0.0,
+      "play": 0.0
+    },
+    "note": "posted_at null rates feed thresholds.collection.posted_at_null_rate_trend_cutoff. A source above the cutoff may not carry a trend claim. Derive the cutoff from these observed rates - do not pick a round number."
+  },
+  "s9_report": {
+    "at": "2026-08-31T11:52:12+05:30",
+    "stage": "S9",
+    "rows_in_index": 112,
+    "files": [
+      "opportunity_index.csv",
+      "blind_spots.md",
+      "verbatims.md"
+    ],
+    "dashboard_snapshot": {
+      "generated_at": "2026-08-31T11:52:12+05:30",
+      "files": {
+        "aggregates": 112,
+        "comparisons": 39,
+        "evidence": 14305,
+        "drop_log": 36659,
+        "s2_report": 1,
+        "s4_report": 3
+      }
+    },
+    "placeholder_findings": 0
+  },
+  "llm_ledger_summary": [
+    {
+      "lane": "A",
+      "provider": "gemini",
+      "model": "gemini-3.5-flash-lite",
+      "calls": 2515,
+      "ok": 873,
+      "tokens": 4565810,
+      "median_latency": 1.047,
+      "rate_limit_wait": 843.868
+    },
+    {
+      "lane": "C",
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b",
+      "calls": 60,
+      "ok": 56,
+      "tokens": 235282,
+      "median_latency": 6.461,
+      "rate_limit_wait": 3084.133
+    }
+  ]
+}

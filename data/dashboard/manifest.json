@@ -1,11 +1,19 @@
 {
-  "generated_at": "2026-08-31T11:52:12+05:30",
+  "generated_at": "2026-09-05T03:41:27+05:30",
   "files": {
     "aggregates": 112,
     "comparisons": 39,
     "evidence": 14305,
     "drop_log": 36659,
     "s2_report": 1,
-    "s4_report": 3
+    "s4_report": 3,
+    "reports": {
+      "s6_human_vs_model": "2026-08-31T11:51:50+05:30",
+      "s6_model_vs_model": "2026-08-31T11:51:49+05:30",
+      "s4_report": "2026-08-22T05:02:02+05:30",
+      "s2_report": "2026-08-22T02:24:33+05:30",
+      "s9_report": "2026-08-31T11:52:12+05:30",
+      "llm_ledger_summary": 2
+    }
   }
 }

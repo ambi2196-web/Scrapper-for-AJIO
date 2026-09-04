@@ -1,6 +1,6 @@
 # Blind spots
 
-_Generated 2026-08-31T11:52:11+05:30 by S9. Read alongside `opportunity_index.csv`._
+_Generated 2026-09-05T03:41:25+05:30 by S9. Read alongside `opportunity_index.csv`._
 
 This register exists because the boundary of the method is itself a finding.
 An area listed here is not an area that does not matter — it is an area the

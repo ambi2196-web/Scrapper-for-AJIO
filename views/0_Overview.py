@@ -129,13 +129,29 @@ So the index is anchored instead to **Play, pre-purchase**. Stance there is
 *inferred* by the classifier from wording, not guaranteed by the surface, which
 is a weaker claim and is stated as one.
 
-What makes it defensible is that `temporal_stance` is the best-validated field
-in the engine — κ 0.71, AC1 0.97, 97% observed agreement against hand labels.
-The index rests on whichever field survived validation most convincingly, which
-is the strongest position available once the reference surface was lost.
-
 Pre-purchase utterances are ~4% of the corpus. That is a small base, and the
 Wilson intervals show it.
+""")
+
+    # Interpolated, never typed. These figures moved when duplicate gold labels
+    # were removed on 31 Aug and the hand-written versions in this paragraph did
+    # not - which is how a deck-facing page came to quote a kappa that a re-run
+    # no longer produces.
+    obs = da.stat("human", "temporal_stance", "observed_agreement")
+    st.markdown(f"""
+**What the reference field is worth.** `temporal_stance` carries the highest
+observed agreement against the hand-labelled sample of any field in the engine —
+{obs:.0%} agreement, AC1 {da.fmt_stat("human", "temporal_stance", "ac1")} — but its
+Cohen's κ is {da.fmt_stat("human", "temporal_stance", "kappa")}, below the
+substantial-agreement floor. That gap is the kappa paradox rather than a
+contradiction: one stance dominates the corpus, which inflates expected
+agreement and collapses κ.
+
+So the index rests on the field two readers most often read the same way, and
+the gate it fails is reported at the top of this page rather than argued away.
+""" if obs is not None else """
+**What the reference field is worth.** Not yet established — the human-vs-model
+κ has not been computed, so this page cannot say how well stance was recovered.
 """)
 
 if len(gated):

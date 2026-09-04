@@ -17,6 +17,7 @@ never doing that again.
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 from typing import Any
 
@@ -208,6 +209,108 @@ def emit_verbatims(top_n: int = 3) -> str:
 # 4. Dashboard snapshot
 # --------------------------------------------------------------------------
 
+# The run reports the dashboard renders. These live in logs/, which is
+# gitignored - the ledger and the drop log carry per-call and per-row detail
+# that has no business in a public repo. But the *summary* line of each is pure
+# derived statistic: counts, rates, kappas. No review text, no ids, no
+# reviewer names.
+#
+# Shipping them is not a relaxation of B5, it is what B5 was for. The
+# reliability figures ARE the evidence for every other number in the app, and
+# for eight days they did not travel: the hand-labelled sample was scored on 31
+# Aug, the gate was computed, and the deployed dashboard went on reporting
+# "no kappa has been computed yet" because the only copy sat in an ignored file.
+# A validation nobody can see has not been performed, as far as a reader is
+# concerned.
+REPORTS_IN_SNAPSHOT = (
+    "s6_human_vs_model",   # human gold set vs lane A - the reliability gate
+    "s6_model_vs_model",   # lane A vs lane C - two independent annotators
+    "s4_report",           # drop profile
+    "s2_report",           # language mix, posted_at coverage
+    "s9_report",
+)
+
+
+def read_jsonl(path: pathlib.Path) -> tuple[list[dict[str, Any]], int]:
+    """Parse an append-only log, tolerating torn lines. Returns (rows, skipped).
+
+    These logs are appended by long-running stages, and one line in the 2,575-row
+    LLM ledger is a fragment: a 429 body split across two lines by two writers
+    interleaving mid-append. A strict reader turns that single corrupt byte range
+    into a failed emit - one lost line taking down the whole snapshot, including
+    the reliability report that has nothing to do with it. Skipped lines are
+    counted and reported rather than passed over in silence.
+    """
+    rows: list[dict[str, Any]] = []
+    skipped = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            skipped += 1
+    return rows, skipped
+
+
+def _latest_line(name: str) -> dict[str, Any] | None:
+    """Last well-formed JSON object in logs/<name>.jsonl, or None."""
+    path = LOGS / f"{name}.jsonl"
+    if not path.exists():
+        return None
+    rows, _ = read_jsonl(path)
+    return rows[-1] if rows else None
+
+
+def _ledger_summary() -> list[dict[str, Any]] | None:
+    """Per-lane call totals. Aggregated deliberately: the ledger itself holds one
+    row per call and is not a public artifact."""
+    import pandas as pd
+
+    path = LOGS / "llm_ledger.jsonl"
+    if not path.exists():
+        return None
+    rows, skipped = read_jsonl(path)
+    if not rows:
+        return None
+    if skipped:
+        print(f"  note: {skipped} unparseable line(s) in llm_ledger.jsonl skipped")
+    df = pd.DataFrame(rows)
+    for col in ("prompt_tokens", "completion_tokens", "latency_s", "rate_limit_wait_s"):
+        if col not in df.columns:
+            df[col] = 0
+    df["tokens"] = df["prompt_tokens"].fillna(0) + df["completion_tokens"].fillna(0)
+    summary = (df.groupby(["lane", "provider", "model"])
+               .agg(calls=("outcome", "size"),
+                    ok=("outcome", lambda s: (s == "ok").sum()),
+                    tokens=("tokens", "sum"),
+                    median_latency=("latency_s", "median"),
+                    rate_limit_wait=("rate_limit_wait_s", "sum"))
+               .reset_index())
+    return json.loads(summary.to_json(orient="records"))
+
+
+def _emit_reports_snapshot() -> dict[str, Any]:
+    """Write data/dashboard/reports.json - the summary lines the app renders."""
+    payload: dict[str, Any] = {"generated_at": now_ist()}
+    present: dict[str, Any] = {}
+    for name in REPORTS_IN_SNAPSHOT:
+        latest = _latest_line(name)
+        if latest is not None:
+            payload[name] = latest
+            present[name] = latest.get("at")
+    ledger = _ledger_summary()
+    if ledger is not None:
+        payload["llm_ledger_summary"] = ledger
+        present["llm_ledger_summary"] = len(ledger)
+
+    (DASHBOARD_DATA / "reports.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8", newline="\n",
+    )
+    return present
+
+
 def emit_dashboard_snapshot() -> dict[str, Any]:
     """Small aggregated parquet set the Streamlit app reads.
 
@@ -241,10 +344,12 @@ def emit_dashboard_snapshot() -> dict[str, Any]:
     for name in ("drop_log", "s2_report", "s4_report"):
         src = LOGS / f"{name}.jsonl"
         if src.exists():
-            rows = [json.loads(l) for l in src.read_text(encoding="utf-8").splitlines() if l.strip()]
+            rows, _ = read_jsonl(src)
             if rows:
                 pd.DataFrame(rows).to_parquet(DASHBOARD_DATA / f"{name}.parquet", index=False)
                 written[name] = len(rows)
+
+    written["reports"] = _emit_reports_snapshot()
 
     manifest = {"generated_at": now_ist(), "files": written}
     (DASHBOARD_DATA / "manifest.json").write_text(
